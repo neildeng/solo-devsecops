@@ -106,6 +106,14 @@ kind create cluster --config kind/config.yaml
 
 但它能做到最重要的一件事：**當某件事發生時，你有地方可以查，而且查得到。**
 
+## 授權
+
+[MIT](LICENSE)。
+
+這個授權涵蓋本 repo 自己寫的設定、chart 與文章。各元件（Cilium、Falco、
+Suricata、Wazuh、Grafana…）與它們的規則集（例如 ET Open）各有自己的授權，
+使用前請自行確認。
+
 ## 說明
 
 - 設定裡的 `the-one.k8s`、`harbor.example.com`、`192.168.247.x` 都是本機的值，
