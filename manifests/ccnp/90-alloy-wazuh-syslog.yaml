@@ -1,0 +1,56 @@
+---
+# 90 — Alloy 把 Falco 事件以 syslog 送進 Wazuh
+#
+# default-deny 同時擋進與出，所以一條連線要放行兩次。
+#
+# 目的端只能是 worker：syslog 的 <remote> 區塊只寫在 worker.conf，
+# master.conf 裡沒有，打 master 的 514 不會有人接。
+# master 與 worker 共用 app: wazuh-manager 標籤，靠 node-type 區分。
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-alloy-wazuh-syslog
+spec:
+  description: "Allow Alloy to ship Falco events to Wazuh over syslog"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: observability
+      k8s:app.kubernetes.io/name: alloy-logs
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-security
+            k8s:app: wazuh-manager
+            k8s:node-type: worker
+      toPorts:
+        - ports:
+            - port: "514"
+              protocol: TCP
+---
+# 目的端：wazuh worker 接受來自 Alloy 的 syslog
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-wazuh-from-alloy
+spec:
+  description: "Allow Wazuh worker to accept syslog from Alloy"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: kube-security
+      k8s:app: wazuh-manager
+      k8s:node-type: worker
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            k8s:app.kubernetes.io/name: alloy-logs
+      toPorts:
+        - ports:
+            - port: "514"
+              protocol: TCP

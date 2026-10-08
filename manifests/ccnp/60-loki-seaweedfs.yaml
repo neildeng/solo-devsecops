@@ -1,0 +1,69 @@
+---
+# 12 — Loki 存取 SeaweedFS 的 S3 介面
+#
+# Loki 以 SeaweedFS 當物件儲存，chunk 與 index 都走 S3 API (8333)。
+# 被擋時 Loki 不會崩潰，而是不斷重試寫入失敗 —— 查詢得到近期資料
+# (還在記憶體)，舊資料卻查不到，症狀容易被誤判成保留期設定問題。
+#
+# 選擇器的粒度取捨：
+#   來源端只用 name + instance，不綁 component。Loki 目前是
+#   single-binary 模式 (另有一個 gateway 元件)，日後若改成分散式
+#   (read / write / backend)，component 會整組改名；綁了就會靜默失效。
+#   這裡的範圍已經排除 observability 內的其他應用 (Grafana、Alloy)，
+#   足夠精確。
+#
+#   目的端則綁到 component=s3。SeaweedFS 的 master / filer / volume /
+#   admin 都在同一個 namespace，Loki 只需要 S3 這一個介面。
+#
+# 一如往常，兩個方向都要放行。
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-loki-to-seaweedfs
+spec:
+  description: "Allow Loki to reach the SeaweedFS S3 API"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: observability
+      k8s:app.kubernetes.io/name: loki
+      k8s:app.kubernetes.io/instance: loki
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: seaweedfs
+            k8s:app.kubernetes.io/name: seaweedfs
+            k8s:app.kubernetes.io/instance: seaweedfs
+            k8s:app.kubernetes.io/component: s3
+      toPorts:
+        - ports:
+            - port: "8333"   # S3 API
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-seaweedfs-from-loki
+spec:
+  description: "Allow the SeaweedFS S3 endpoint to accept requests from Loki"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: seaweedfs
+      k8s:app.kubernetes.io/name: seaweedfs
+      k8s:app.kubernetes.io/instance: seaweedfs
+      k8s:app.kubernetes.io/component: s3
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            k8s:app.kubernetes.io/name: loki
+            k8s:app.kubernetes.io/instance: loki
+      toPorts:
+        - ports:
+            - port: "8333"
+              protocol: TCP

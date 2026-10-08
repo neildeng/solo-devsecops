@@ -1,0 +1,52 @@
+---
+# 10 — falcosidekick 送告警到 Zulip
+#
+# default-deny 同時擋進與出，所以一條連線要放行兩次：
+#   (1) 來源端的 egress
+#   (2) 目的端的 ingress
+# 只寫一邊的症狀跟完全沒寫一樣 —— i/o timeout，看不出少了哪半邊。
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-falcosidekick-zulip
+spec:
+  description: "Allow falcosidekick to post alerts to Zulip (both directions)"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: kube-security
+      k8s:app.kubernetes.io/name: falcosidekick
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: zulip
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+---
+# 目的端：zulip 接受來自 falcosidekick 的連線
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-zulip-from-falcosidekick
+spec:
+  description: "Allow Zulip to accept webhook posts from falcosidekick"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: zulip
+      k8s:app.kubernetes.io/name: zulip
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-security
+            k8s:app.kubernetes.io/name: falcosidekick
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP

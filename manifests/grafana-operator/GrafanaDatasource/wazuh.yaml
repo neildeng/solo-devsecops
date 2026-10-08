@@ -1,0 +1,59 @@
+---
+# Wazuh 的告警索引（OpenSearch）
+#
+# 用 Grafana 內建的 Elasticsearch 資料來源 —— Wazuh 的 opensearch.yml
+# 已設 compatibility.override_main_response_version: true，會回報成
+# Elasticsearch 7，不需要額外安裝 OpenSearch 外掛。
+#
+# 這是「讓 Wazuh 當告警大腦」的中間路線：由 Wazuh 的規則層決定什麼
+# 算事件（爆發收斂、抑制、MITRE），Grafana 只負責把它送出去。
+# 不必覆寫 Wazuh 的 ossec.conf —— chart 沒開 integration / email 的
+# 設定入口，而 Wazuh 沒有 conf.d，要加只能整份接管那 293 行。
+#
+# 相依：
+#   ccnp/92-grafana-wazuh-indexer.yaml 放行 9200
+#   secret wazuh-indexer-cred（由 kube-security/indexer-cred 複製）
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: wazuh-alerts
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  datasource:
+    name: Wazuh
+    uid: wazuh-alerts
+    type: elasticsearch
+    access: proxy
+    url: https://wazuh-indexer.kube-security.svc.cluster.local:9200
+    # indexer 用自簽憑證（cert-manager 簽的內部 CA），Grafana 不信任它
+    jsonData:
+      timeField: "@timestamp"
+      # Wazuh 4.x 的索引是每日一個，用萬用字元涵蓋
+      index: "wazuh-alerts-4.x-*"
+      tlsSkipVerify: true
+      maxConcurrentShardRequests: 5
+    basicAuth: true
+    basicAuthUser: ${INDEXER_USERNAME}
+    secureJsonData:
+      basicAuthPassword: ${INDEXER_PASSWORD}
+  # valuesFrom 本身在 spec 層級（放進 spec.datasource 會被 strict
+  # decoding 擋下），但 targetPath 是「相對於 spec.datasource」的路徑，
+  # 所以這裡不加 datasource. 前綴。兩者層級不同，很容易寫混。
+  #
+  # 搭配上面的 ${...} 佔位符使用：operator 會把 targetPath 指到的值
+  # 整個換成 secret 的內容。少了佔位符或路徑寫錯都不會報錯，
+  # 只會得到空的 basicAuthUser 與 401 Unauthorized。
+  valuesFrom:
+    - targetPath: basicAuthUser
+      valueFrom:
+        secretKeyRef:
+          name: wazuh-indexer-cred
+          key: INDEXER_USERNAME
+    - targetPath: secureJsonData.basicAuthPassword
+      valueFrom:
+        secretKeyRef:
+          name: wazuh-indexer-cred
+          key: INDEXER_PASSWORD

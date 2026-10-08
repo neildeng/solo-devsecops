@@ -1,0 +1,93 @@
+---
+# 所有 ociArtifact 都走本機的 pull-through mirror（registry/compose.yaml
+# 起的 mirror-ghcr-io，上游是 ghcr.io），不直連 ghcr.io。
+#
+# 實測 5 MB 的 plugin blob：
+#   直連 ghcr.io      148 秒
+#   mirror 快取命中     0.008 秒
+# 四個 plugin 加兩個 ruleset、每個節點各拉一份，差別就是「十幾分鐘」
+# 與「幾秒」。這也是預設 livenessProbe（45 秒）會殺掉 artifact sidecar
+# 的原因，見 30-falco.yaml。
+#
+# 相依：CoreDNS 的 hosts 區塊負責讓 Pod 解析 mirror-ghcr-io，
+#       manifests/ccnp/91-falco-oci-mirror.yaml 負責放行網路。
+# mirror 不可用時把 name 改回 ghcr.io 並移除 plainHTTP 即可，只是會變慢。
+# k8saudit：API server 的稽核事件來源。
+#
+# openParams 的埠號要與 40-k8saudit-webhook-svc.yaml 的 targetPort
+# 一致，而該 Service 的 nodePort 又要與 kind/audit-webhook.yaml 裡
+# API server 設定的 http://127.0.0.1:30007/k8s-audit 一致。
+# 三者任一不符，稽核事件就收不到，而且 Falco 不會報錯。
+apiVersion: artifact.falcosecurity.dev/v1alpha1
+kind: Plugin
+metadata:
+  name: k8saudit
+  namespace: kube-security
+spec:
+  ociArtifact:
+    image:
+      repository: falcosecurity/plugins/plugin/k8saudit
+      tag: "0.18.0"
+    registry:
+      name: mirror-ghcr-io:5000
+      plainHTTP: true
+  config:
+    openParams: "http://:9765/k8s-audit"
+---
+# json：k8saudit 規則用 jevt.value[...] 取欄位時需要它
+apiVersion: artifact.falcosecurity.dev/v1alpha1
+kind: Plugin
+metadata:
+  name: json
+  namespace: kube-security
+spec:
+  ociArtifact:
+    image:
+      repository: falcosecurity/plugins/plugin/json
+      tag: "0.7.0"
+    registry:
+      name: mirror-ghcr-io:5000
+      plainHTTP: true
+---
+# container：提供 container.name / container.image 等欄位，
+# KOAD 的 syscall 規則大量依賴（例如 S13 用 container.name 排除自己）
+apiVersion: artifact.falcosecurity.dev/v1alpha1
+kind: Plugin
+metadata:
+  name: container
+  namespace: kube-security
+spec:
+  ociArtifact:
+    image:
+      repository: falcosecurity/plugins/plugin/container
+      tag: "0.7.5"
+    registry:
+      name: mirror-ghcr-io:5000
+      plainHTTP: true
+---
+# k8smeta：補上 k8s.pod.name / k8s.ns.name 等欄位。
+#
+# 資料來自 05-metacollector.yaml 部署的 metacollector，collectorHostname
+# 少了會讓 Falco 直接啟動失敗（不是降級）：
+#   Runtime error: error in plugin k8smeta init config:
+#   In <root>, Missing required property 'collectorHostname'. Exiting.
+#
+# nodeName 用 Falco 注入的環境變數，讓每個 Pod 只取自己節點的中繼資料。
+apiVersion: artifact.falcosecurity.dev/v1alpha1
+kind: Plugin
+metadata:
+  name: k8smeta
+  namespace: kube-security
+spec:
+  ociArtifact:
+    image:
+      repository: falcosecurity/plugins/plugin/k8smeta
+      tag: "0.4.1"
+    registry:
+      name: mirror-ghcr-io:5000
+      plainHTTP: true
+  config:
+    initConfig:
+      collectorHostname: metacollector.kube-security.svc.cluster.local
+      collectorPort: 45000
+      nodeName: "${FALCO_K8S_NODE_NAME}"

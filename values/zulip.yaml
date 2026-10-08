@@ -1,0 +1,128 @@
+## 1. Replace each occurrence of "set-secure-password" with a
+##    different random password and uncomment it.
+##
+## 2. Replace each occurrence of "zulip.example.com" with the domain
+##    you want Zulip to be reached on.
+##
+## --> https://zulip.readthedocs.io/projects/docker/en/latest/how-to/helm-getting-started.html
+
+zulip:
+  ## See https://zulip.readthedocs.io/projects/docker/en/latest/reference/environment-vars.html
+  ## for configuration
+  environment:
+    ## All standard Zulip settings are prefixed with SETTING_
+    ##
+    ## --> https://zulip.readthedocs.io/projects/docker/en/latest/how-to/helm-settings.html
+    ##     https://zulip.readthedocs.io/en/stable/production/settings.html
+    ##
+    ## The following settings are required:
+    SETTING_EXTERNAL_HOST: zulip.the-one.k8s
+    SETTING_ZULIP_ADMINISTRATOR: 'admin@the-one.local'
+    LOADBALANCER_IPS: 10.244.0.0/16
+    ## 隱藏 email 時會用 user<id>@<FAKE_EMAIL_DOMAIN> 當顯示用 email，
+    ## 預設取 EXTERNAL_HOST，但 k8s 不是合法 TLD，必須另外指定
+    SETTING_FAKE_EMAIL_DOMAIN: 'zulip.the-one.local'
+
+    ## SMTP
+    SETTING_EMAIL_HOST: mailpit.mailpit.svc.cluster.local
+    SETTING_EMAIL_PORT: "1025"
+    SETTING_EMAIL_USE_TLS: "False"
+    SETTING_EMAIL_HOST_USER: ""
+    ## 寄件者位址。不設的話會從 EXTERNAL_HOST 推導成 noreply@zulip.the-one.k8s，
+    ## 而 .k8s 含數字會被 Django EmailValidator 拒絕 (與 FAKE_EMAIL_DOMAIN 同一個坑)
+    SETTING_NOREPLY_EMAIL_ADDRESS: 'noreply@zulip.the-one.local'
+
+    ## The secret_key secret is also required.  You can provide it
+    ## explicitly, or pull it from a Kubernetes Secret:
+    ##
+    ## --> https://zulip.readthedocs.io/projects/docker/en/latest/how-to/helm-settings.html#referencing-kubernetes-secrets-with-valuefrom
+    ##
+    SECRETS_secret_key:
+      valueFrom:
+        secretKeyRef:
+          name: zulip-secrets
+          key: secret-key
+
+    ## 給 postSetup 腳本建立第一個 organization owner 用的密碼
+    ZULIP_ADMIN_PASSWORD:
+      valueFrom:
+        secretKeyRef:
+          name: zulip-secrets
+          key: admin-password
+
+## entrypoint 會在 migration 完成後以 root 執行 /data/post-setup.d/ 下的腳本，
+## 每次 Pod 啟動都會執行，因此腳本必須可重複執行
+postSetup:
+  scripts:
+    10-create-root-realm.sh: |
+      #!/bin/bash
+      set -euo pipefail
+      MANAGE=/home/zulip/deployments/current/manage.py
+
+      # create_realm 不是 atomic，建 owner 失敗時會留下沒有任何使用者的 realm，
+      # 因此以「是否有 owner」判斷，而不只是 realm 是否存在
+      state=$(su zulip -c "$MANAGE shell" <<'EOF' | grep -E '^REALM_STATE='
+      from zerver.models import Realm, UserProfile
+      realm = Realm.objects.filter(string_id="").first()
+      if realm is None:
+          print("REALM_STATE=missing")
+      elif UserProfile.objects.filter(realm=realm, role=UserProfile.ROLE_REALM_OWNER, is_bot=False).exists():
+          print("REALM_STATE=ready")
+      elif not UserProfile.objects.filter(realm=realm, is_bot=False).exists():
+          print(f"REALM_STATE=broken:{realm.id}")
+      else:
+          print("REALM_STATE=no-owner")
+      EOF
+      )
+      case "$state" in
+          REALM_STATE=ready)
+              echo "Root realm already has an owner, skipping."
+              exit 0
+              ;;
+          REALM_STATE=broken:*)
+              realm_id=${state#REALM_STATE=broken:}
+              echo "Root realm $realm_id has no human users, deleting and recreating."
+              # delete_realm 會要求輸入 string_id 確認，root realm 的 string_id 是空字串
+              printf '\n' | su zulip -c "$MANAGE delete_realm -r $realm_id"
+              ;;
+          REALM_STATE=no-owner)
+              # 有使用者但沒有 owner，不自動處理以免誤刪資料
+              echo "Root realm has users but no owner, skipping. Fix it manually."
+              exit 1
+              ;;
+      esac
+
+      pwfile=$(mktemp)
+      trap 'rm -f "$pwfile"' EXIT
+      printf '%s' "$ZULIP_ADMIN_PASSWORD" >"$pwfile"
+      chown zulip "$pwfile"
+      chmod 600 "$pwfile"
+
+      # email 的 TLD 不能含數字 (k8s 會被 Django EmailValidator 拒絕)
+      su zulip -c "$MANAGE create_realm 'The One' admin@the-one.local 'Admin' \
+          --string-id '' --password-file $pwfile"
+
+## To use existing external services, and have this chart omit its
+## dependent services:
+##
+## --> https://zulip.readthedocs.io/projects/docker/en/latest/how-to/helm-existing-services.html
+
+memcached:
+  auth:
+    password: "replace-with-secure-password"
+
+rabbitmq:
+  auth:
+    password: "replace-with-secure-password"
+    erlangCookie: "replace-with-secure-cookie"
+
+redis:
+  auth:
+    password: "replace-with-secure-password"
+
+postgresql:
+  auth:
+    ## postgres admin user password
+    postgresPassword: "replace-with-secure-password"
+    ## postgres zulip user password
+    password: "replace-with-secure-password"

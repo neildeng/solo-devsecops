@@ -1,0 +1,149 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "suricata.fullname" . }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "suricata.name" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "suricata.name" . }}
+      annotations:
+        # suricata.yaml 變更時觸發 rolling update (ConfigMap 以 subPath 掛載，不會自動同步)
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      hostNetwork: {{ .Values.hostNetwork }}
+      hostPID: {{ .Values.hostPID }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      initContainers:
+        - name: prepare-suricata-config
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cp /etc/suricata/classification.config /config/
+              cp /etc/suricata/reference.config /config/
+              cp /etc/suricata/threshold.config /config/
+
+              chmod 644 /config/*.config
+
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: suricata-config
+              mountPath: /config
+        - name: rules
+          image: "{{ .Values.rules.image.repository }}:{{ .Values.rules.image.tag }}"
+          imagePullPolicy: {{ .Values.rules.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              echo "Installing Suricata rules..."
+              cp -av /rules/. {{ .Values.rules.mountPath }}/
+              echo "Rules installed:"
+              ls -lh {{ .Values.rules.mountPath }}
+
+          volumeMounts:
+            - name: rules
+              mountPath: {{ .Values.rules.mountPath }}
+      containers:
+{{- if .Values.logs.rotate.enabled }}
+        # Suricata 自己不輪替 eve.json，容器裡也沒有 cron 去跑 image 附的
+        # logrotate 設定。缺了這個 sidecar，hostPath 會以約 1.2 GB/天/node
+        # 無限成長 —— 而且症狀是節點磁碟滿，不是 Suricata 報錯。
+        - name: logrotate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              while true; do
+                  logrotate -s /var/log/suricata/.logrotate.state /etc/logrotate-suricata/logrotate.conf || true
+                  sleep {{ .Values.logs.rotate.intervalSeconds }}
+              done
+          securityContext:
+            runAsUser: 0
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/suricata
+            - name: config
+              mountPath: /etc/logrotate-suricata
+{{- end }}
+        - name: suricata
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            privileged: {{ .Values.securityContext.privileged }}
+            capabilities:
+              add:
+                {{- toYaml .Values.securityContext.capabilities.add | nindent 16 }}
+              drop:
+                {{- toYaml .Values.securityContext.capabilities.drop | nindent 16 }}
+          command:
+            - suricata
+          args:
+            - "-c"
+            - "/etc/suricata/suricata.yaml"
+            - "-i"
+            - "{{ .Values.suricata.interface }}"
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/suricata/suricata.yaml
+              subPath: suricata.yaml
+              readOnly: true
+            - name: rules
+              mountPath: {{ .Values.rules.mountPath }}
+              readOnly: true
+            - name: logs
+              mountPath: /var/log/suricata
+            - name: run
+              mountPath: /var/run/suricata
+            - name: suricata-config
+              mountPath: /etc/suricata/classification.config
+              subPath: classification.config
+              readOnly: true
+            - name: suricata-config
+              mountPath: /etc/suricata/reference.config
+              subPath: reference.config
+              readOnly: true
+            - name: suricata-config
+              mountPath: /etc/suricata/threshold.config
+              subPath: threshold.config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "suricata.fullname" . }}-config
+        - name: rules
+          emptyDir: {}
+        - name: suricata-config
+          emptyDir: {}
+        - name: logs
+          hostPath:
+            path: {{ .Values.logs.hostPath }}
+            type: DirectoryOrCreate
+        - name: run
+          hostPath:
+            path: {{ .Values.run.hostPath }}
+            type: DirectoryOrCreate

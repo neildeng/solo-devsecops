@@ -1,0 +1,106 @@
+image:
+  repository: jasonish/suricata
+  tag: "8.0.6"
+  pullPolicy: IfNotPresent
+rules:
+  image:
+    repository: harbor.example.com/security/suricata-rules
+    # 以建置日期為版本 (suricata-update 產生的 ET Open + local.rules)，回滾時改回舊 tag 即可
+    tag: "2026.10.08.2"
+    pullPolicy: IfNotPresent
+  mountPath: /var/lib/suricata/rules
+suricata:
+  interface: eth0
+  homeNet:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+  externalNet: "!$HOME_NET"
+  # ET Open 等規則集會引用這些變數，未定義的規則會載入失敗 (預設值同 Suricata 官方 suricata.yaml)
+  addressGroups:
+    HTTP_SERVERS: "$HOME_NET"
+    SMTP_SERVERS: "$HOME_NET"
+    SQL_SERVERS: "$HOME_NET"
+    DNS_SERVERS: "$HOME_NET"
+    TELNET_SERVERS: "$HOME_NET"
+    AIM_SERVERS: "$EXTERNAL_NET"
+    DC_SERVERS: "$HOME_NET"
+    DNP3_SERVER: "$HOME_NET"
+    DNP3_CLIENT: "$HOME_NET"
+    MODBUS_CLIENT: "$HOME_NET"
+    MODBUS_SERVER: "$HOME_NET"
+    ENIP_CLIENT: "$HOME_NET"
+    ENIP_SERVER: "$HOME_NET"
+  portGroups:
+    HTTP_PORTS: "80"
+    SHELLCODE_PORTS: "!80"
+    ORACLE_PORTS: "1521"
+    SSH_PORTS: "22"
+    DNP3_PORTS: "20000"
+    MODBUS_PORTS: "502"
+    FILE_DATA_PORTS: "[$HTTP_PORTS,110,143]"
+    FTP_PORTS: "21"
+    GENEVE_PORTS: "6081"
+    VXLAN_PORTS: "4789"
+    TEREDO_PORTS: "3544"
+    SIP_PORTS: "[5060,5061]"
+  # eve.json 輸出的事件種類。實測 16 分鐘 21147 筆 / 13.6 MB
+  # (約 1.2 GB/天/node)，其中 flow 佔 37.5%。
+  #
+  # 不輸出 flow：Cilium Hubble 已經提供 flow 層級的可視性 (來源/目的
+  # endpoint、verdict、L4)，Suricata 的 flow 記錄是同一件事的第二份，
+  # 而它是整個 eve.json 裡最大的一塊。保留 http / dns / tls / ssh ——
+  # 那是 Hubble 給不了的 L7 細節，也是 Threat Hunting 的主要素材。
+  eve:
+    types:
+      - alert
+      - http
+      - dns
+      - tls
+      - ssh
+      - stats
+  afPacket:
+    enabled: true
+    clusterId: 99
+    clusterType: cluster_flow
+    defrag: true
+    useMmap: true
+    tpacketV3: true
+resources:
+  requests:
+    cpu: 500m
+    # 載入 ET Open 約 500Mi，live reload 時新舊 detection engine 並存峰值約 850Mi
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+hostNetwork: true
+hostPID: true
+securityContext:
+  privileged: false
+  capabilities:
+    add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+    drop:
+      - ALL
+logs:
+  hostPath: /var/log/suricata
+  # Suricata 不會自行輪替 eve.json，image 雖然附了 /etc/logrotate.d/suricata
+  # 但容器裡沒有 cron 去執行它 —— 結果是 hostPath 以約 1.2 GB/天/node 無限成長。
+  # 這裡用一個 sidecar 定期執行 logrotate。用 copytruncate 而非 rename +
+  # suricatasc reopen-log-files：前者不必讓 sidecar 碰 Suricata 的控制
+  # socket，而且 Alloy 的 loki.source.file 對「檔案被截短」有明確處理
+  # (偵測到大小倒退就把 offset 歸零)，rename 則可能讓它跟丟尾端。
+  rotate:
+    enabled: true
+    intervalSeconds: 300
+    size: 200M
+    keep: 2
+run:
+  hostPath: /var/run/suricata
+nodeSelector: {}
+tolerations:
+  - operator: Exists
+affinity: {}

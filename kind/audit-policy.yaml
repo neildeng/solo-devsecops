@@ -1,0 +1,121 @@
+# kube-apiserver 的稽核政策
+#
+# 規則由上而下比對，第一條命中就決定 level，所以排除規則要放在前面。
+# 沒有任何規則命中的事件「不會被記錄」—— 這裡刻意不放 catch-all，
+# 逐一列舉需要的資源，避免 audit log 爆量。
+#
+# 加入新的 Falco k8s_audit 規則時，記得回來確認對應的資源與動詞
+# 有被記錄，否則規則載入成功、條件正確、卻永遠收不到事件。
+apiVersion: audit.k8s.io/v1
+kind: Policy
+rules:
+  # ---- 排除：高頻且無安全價值的端點 ----
+  # 必須排在所有 pods 規則之前。kubelet 的狀態回報頻率極高，
+  # 不排除的話 pods 的稽核量會被它淹沒。
+  - level: None
+    resources:
+      - group: ""
+        resources:
+          - pods/status
+          - pods/binding
+          - pods/log
+
+  - level: None
+    nonResourceURLs: ["/healthz*", "/readyz*", "/livez*", "/version", "/metrics"]
+
+  # ---- S06, S22：Pod 建立與刪除 ----
+  # 必須是 RequestResponse：S06 比對 ka.req.pod.containers.privileged
+  # 與 ka.req.pod.volumes.hostpath，那些欄位來自請求內容，
+  # Metadata 層級取不到，規則會永遠不匹配且沒有任何錯誤訊息。
+  # 刻意不含 patch/update：那兩個動詞多半是控制器的狀態更新。
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["pods"]
+    verbs: ["create", "delete"]
+
+  # ---- S09, S10, S29b：RBAC 變更 ----
+  # 不含 get/list：控制器會持續列舉 RBAC 物件，量非常大，
+  # 而 S29b 另外排除了 system: 與 kubernetes-admin，加了也不會觸發。
+  # 要演練 S29b 時再單獨放寬，並用專用的測試身分。
+  - level: RequestResponse
+    resources:
+      - group: "rbac.authorization.k8s.io"
+        resources:
+          - clusterroles
+          - clusterrolebindings
+          - roles
+          - rolebindings
+    verbs: ["create", "update", "patch", "delete"]
+
+  # ---- S10：ServiceAccount 操作 ----
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["serviceaccounts"]
+    verbs: ["create", "update", "patch", "delete"]
+
+  # ---- S10b：長效 token 簽發 ----
+  # token 是 serviceaccounts 的子資源，上面那條涵蓋不到，要獨立列出。
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["serviceaccounts/token"]
+    verbs: ["create"]
+
+  # ---- S03, S25, S26, S30：Secret 存取 ----
+  # 維持 Metadata：Secret 的內容不該進稽核日誌。
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets"]
+
+  # ---- S11：Webhook 設定變更 ----
+  - level: RequestResponse
+    resources:
+      - group: "admissionregistration.k8s.io"
+        resources:
+          - mutatingwebhookconfigurations
+          - validatingwebhookconfigurations
+    verbs: ["create", "update", "patch", "delete"]
+
+  # ---- S04, S05, S30b：Pod exec/attach ----
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["pods/exec", "pods/attach", "pods/portforward"]
+
+  # ---- S07, S33：CronJob 與 Job 變更 ----
+  - level: RequestResponse
+    resources:
+      - group: "batch"
+        resources: ["cronjobs", "jobs"]
+    verbs: ["create", "update", "patch", "delete"]
+
+  # ---- S23：偵測工具遭刪除 ----
+  # Falco、Kyverno 等都是 DaemonSet 或 Deployment，刪除即代表
+  # 防禦被移除。Metadata 足夠，規則只看資源名稱與動詞。
+  - level: Metadata
+    resources:
+      - group: "apps"
+        resources:
+          - daemonsets
+          - deployments
+          - statefulsets
+    verbs: ["delete"]
+
+  # ---- S23b：Kyverno 政策遭移除 ----
+  - level: Metadata
+    resources:
+      - group: "kyverno.io"
+        resources:
+          - clusterpolicies
+          - policies
+    verbs: ["delete", "update", "patch"]
+
+  # ---- S31：持久資料遭刪除 ----
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["persistentvolumeclaims", "persistentvolumes"]
+    verbs: ["delete"]

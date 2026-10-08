@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 1040" width="1480" height="1040" font-family="-apple-system, BlinkMacSystemFont, 'PingFang TC', 'Noto Sans TC', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+    <style>
+      .box      { rx: 12; }
+      .t1       { font-size: 25px; font-weight: 700; fill: #0f172a; }
+      .t2       { font-size: 15px; fill: #64748b; }
+      .rail     { font-size: 15px; font-weight: 600; fill: #94a3b8; letter-spacing: .06em; }
+      .edge     { font-size: 15px; fill: #475569; }
+      .title    { font-size: 34px; font-weight: 700; fill: #0f172a; }
+      .sub      { font-size: 17px; fill: #64748b; }
+      .foot     { font-size: 17px; fill: #475569; }
+      .ln       { stroke: #94a3b8; stroke-width: 2.4; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="1480" height="1040" fill="#ffffff"/>
+
+  <!-- 標題 -->
+  <text class="title" x="60" y="56">一個人的 DevSecOps — 整體架構</text>
+  <text class="sub"   x="60" y="88">三個偵測來源 · 兩條資料路徑 · 一個出口</text>
+
+  <!-- 左側欄位說明 -->
+  <text class="rail" x="150" y="172" text-anchor="end">偵測來源</text>
+  <text class="rail" x="150" y="345" text-anchor="end">蒐集</text>
+  <text class="rail" x="150" y="543" text-anchor="end">倉儲與判斷</text>
+  <text class="rail" x="150" y="746" text-anchor="end">出口</text>
+  <text class="rail" x="150" y="906" text-anchor="end">通知</text>
+
+  <!-- ===== 偵測來源 ===== -->
+  <g>
+    <rect class="box" x="190" y="115" width="350" height="100" fill="#fffbeb" stroke="#f59e0b" stroke-width="2"/>
+    <rect x="190" y="115" width="6" height="100" fill="#f59e0b" rx="3"/>
+    <text class="t1" x="216" y="156">Falco</text>
+    <text class="t2" x="216" y="183">主機行為</text>
+    <text class="t2" x="216" y="203">行程 · 檔案存取 · syscall</text>
+  </g>
+  <g>
+    <rect class="box" x="585" y="115" width="350" height="100" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+    <rect x="585" y="115" width="6" height="100" fill="#6366f1" rx="3"/>
+    <text class="t1" x="611" y="156">K8s Audit</text>
+    <text class="t2" x="611" y="183">控制平面</text>
+    <text class="t2" x="611" y="203">API 呼叫 · RBAC · Pod 規格</text>
+  </g>
+  <g>
+    <rect class="box" x="980" y="115" width="350" height="100" fill="#ecfeff" stroke="#0ea5e9" stroke-width="2"/>
+    <rect x="980" y="115" width="6" height="100" fill="#0ea5e9" rx="3"/>
+    <text class="t1" x="1006" y="156">Suricata</text>
+    <text class="t2" x="1006" y="183">網路封包</text>
+    <text class="t2" x="1006" y="203">C2 回連 · 掃描 · L7 細節</text>
+  </g>
+
+  <!-- 來源 → Alloy -->
+  <path class="ln" d="M365 215 V258"/>
+  <path class="ln" d="M760 215 V258"/>
+  <path class="ln" d="M1155 215 V258"/>
+  <path class="ln" d="M365 258 H1155"/>
+  <path class="ln" d="M760 258 V300" marker-end="url(#arrow)"/>
+
+  <!-- ===== 蒐集 ===== -->
+  <g>
+    <rect class="box" x="550" y="305" width="420" height="80" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
+    <text class="t1" x="760" y="345" text-anchor="middle">Alloy</text>
+    <text class="t2" x="760" y="369" text-anchor="middle">唯一的蒐集層</text>
+  </g>
+
+  <!-- Alloy → Loki / Wazuh -->
+  <path class="ln" d="M760 385 V430 H500 V490" marker-end="url(#arrow)"/>
+  <path class="ln" d="M760 385 V430 H1020 V490" marker-end="url(#arrow)"/>
+  <text class="edge" x="487" y="462" text-anchor="end">全量原始日誌</text>
+  <text class="edge" x="1033" y="462" text-anchor="start">只送需要判斷的事件</text>
+
+  <!-- ===== 倉儲與判斷 ===== -->
+  <g>
+    <rect class="box" x="280" y="490" width="440" height="120" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+    <text class="t1" x="500" y="532" text-anchor="middle">Loki</text>
+    <text class="t2" x="500" y="559" text-anchor="middle">全量留存，供事後獵捕</text>
+    <text class="t2" x="500" y="582" text-anchor="middle">不決定要不要吵你</text>
+  </g>
+  <g>
+    <rect class="box" x="800" y="490" width="440" height="120" fill="#fef2f2" stroke="#ef4444" stroke-width="2"/>
+    <text class="t1" x="1020" y="532" text-anchor="middle">Wazuh 規則層</text>
+    <text class="t2" x="1020" y="559" text-anchor="middle">分級 · 爆發收斂 · 抑制 · MITRE</text>
+    <text class="t2" x="1020" y="582" text-anchor="middle">唯一的判斷層</text>
+  </g>
+
+  <!-- → Grafana -->
+  <path class="ln" d="M500 610 V655 H760 V700" marker-end="url(#arrow)"/>
+  <path class="ln" d="M1020 610 V655 H760 V700" marker-end="url(#arrow)"/>
+
+  <!-- ===== 出口 ===== -->
+  <g>
+    <rect class="box" x="550" y="700" width="420" height="80" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+    <text class="t1" x="760" y="740" text-anchor="middle">Grafana</text>
+    <text class="t2" x="760" y="764" text-anchor="middle">唯一的出口 — 分組 · 靜音 · 重送間隔</text>
+  </g>
+
+  <path class="ln" d="M760 780 V822 H600 V862" marker-end="url(#arrow)"/>
+  <path class="ln" d="M760 780 V822 H920 V862" marker-end="url(#arrow)"/>
+
+  <!-- ===== 通知 ===== -->
+  <g>
+    <rect class="box" x="470" y="862" width="260" height="72" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+    <text class="t1" x="600" y="900" text-anchor="middle">Zulip</text>
+    <text class="t2" x="600" y="922" text-anchor="middle">聊天室</text>
+  </g>
+  <g>
+    <rect class="box" x="790" y="862" width="260" height="72" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+    <text class="t1" x="920" y="900" text-anchor="middle">Mailpit</text>
+    <text class="t2" x="920" y="922" text-anchor="middle">郵件</text>
+  </g>
+
+  <!-- 底注 -->
+  <path d="M60 968 H1420" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text class="foot" x="60" y="1000">三個來源互補，不重疊　·　Loki 收全量供獵捕，Wazuh 收需要判斷的　·　只有一個出口，抑制規則不會散在兩處</text>
+</svg>

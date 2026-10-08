@@ -1,0 +1,178 @@
+---
+global:
+  extraArgs:
+    - -config.expand-env=true
+  extraEnvFrom:
+    - secretRef:
+        name: loki-credentials
+
+deploymentMode: Monolithic
+
+loki:
+  revisionHistoryLimit: 1
+  auth_enabled: true
+  commonConfig:
+    replication_factor: 1
+  limits_config:
+    allow_structured_metadata: true
+    otlp_config:
+      resource_attributes:
+        ignore_defaults: true
+        attributes_config:
+          # ── Index Labels (低基數，每次查詢幾乎都會用到) ──
+          - action: index_label
+            attributes:
+              - deployment.environment.name
+              - k8s.cluster.name
+              - k8s.namespace.name
+              - service.name
+          # ── Structured Metadata (仍可查詢，但不佔 index) ──
+          - action: structured_metadata
+            attributes:
+              # 與 index label 同值的冗餘欄位
+              - k8s.deployment.name
+              - service.namespace
+              - k8s.pod.name
+              - k8s.pod.uid
+              - k8s.node.name
+              - k8s.container.name
+              - k8s.replicaset.name
+              - k8s.statefulset.name
+              - k8s.cronjob.name
+              - k8s.daemonset.name
+              - k8s.job.name
+              - container.name
+              - cloud.availability_zone
+              - cloud.region
+          # ── Drop (不需要的 resource attributes) ──
+          - action: drop
+            regex: .*instance.*
+      log_attributes:
+        # ── Index Label (日誌等級，基數極低 ~5 值) ──
+        - action: index_label
+          attributes:
+            - "level"
+        # ── Structured Metadata (業務欄位，從 MDC 來) ──
+        - action: structured_metadata
+          attributes:
+            - "trace_id"
+        # ── 其餘 log attributes 全部丟棄，避免基數爆炸 ──
+        - action: drop
+          regex: .*
+    max_query_lookback: 72h # 不變（7d）
+    retention_period: 96h   # 240h → 192h：與 lookback 對齊，去掉查不到的 3 天
+    retention_stream:
+      - selector: '{service_name="kubearmor-relay-server"}'
+        priority: 1
+        period: 24h           # 佔 99.8% 量的來源，單獨壓到 1.5 天
+    reject_old_samples: true
+    reject_old_samples_max_age: 48h
+    max_cache_freshness_per_query: 30m
+    split_queries_by_interval: 5m
+    query_timeout: 300s
+    volume_enabled: true
+    ingestion_rate_mb: 10
+    ingestion_burst_size_mb: 20
+    max_structured_metadata_size: 128KB
+    max_structured_metadata_entries_count: 128
+    # 單一 stream 限速。9/07 的 117 萬筆/小時只來自 12 個 stream ——
+    # 這是「日誌自我放大迴圈」的指紋，per-stream 限速是對它的通用防護。
+    per_stream_rate_limit: 3MB
+    per_stream_rate_limit_burst: 10MB
+  compactor:
+    retention_enabled: true
+    working_directory: /tmp/retention
+    compaction_interval: 10m
+    retention_delete_delay: 2h
+    retention_delete_worker_count: 150
+    delete_request_store: aws
+  storage:
+    bucketNames:
+      chunks: loki-chunks
+      ruler: loki-rules
+    type: s3
+    s3:
+      endpoint: 'seaweedfs-s3.seaweedfs.svc.cluster.local:8333'
+      accessKeyId: '${LOKI_S3_AK}'
+      secretAccessKey: '${LOKI_S3_SK}'
+      region: ""
+      insecure: true
+      s3ForcePathStyle: true
+      http_config:
+        insecure_skip_verify: true
+  structuredConfig:
+    # 單機模式下 join 不到 peer 本來就正常，不該讓整個 service 進入 Failed。
+    # 這是 memberlist ready 死結的固化解 —— chart 的 memberlist Service 樣板
+    # 沒有 publishNotReadyAddresses，也沒有對應 values 可設。
+    memberlist:
+      abort_if_cluster_join_fails: false
+    ingester:
+      wal:
+        # 必須與 singleBinary.resources.limits.memory 成對設定，約設為 limit 的一半。
+        # 只加 limits 會更糟：replay 大 WAL 會直接撞 cgroup 上限被 OOM kill。
+        replay_memory_ceiling: 8GB
+    storage_config:
+      named_stores:
+        aws:
+          s3-loki-chunks:
+            endpoint: 'seaweedfs-s3.seaweedfs.svc.cluster.local:8333'
+            bucketnames: "loki-chunks"
+            access_key_id: '${LOKI_S3_AK}'
+            secret_access_key: '${LOKI_S3_SK}'
+            s3forcepathstyle: true
+            insecure: true
+  schemaConfig:
+    configs:
+      - from: "2026-05-01"
+        store: tsdb
+        object_store: s3-loki-chunks
+        schema: v13
+        index:
+          prefix: index_
+          period: 24h
+  ingester:
+    chunk_encoding: snappy
+  distributor:
+    otlp_config:
+      default_resource_attributes_as_index_labels:
+        - deployment.environment.name
+        - k8s.cluster.name
+        - k8s.namespace.name
+        - service.name
+  ui:
+    enabled: true
+
+test:
+  enabled: false
+
+lokiCanary:
+  enabled: false
+
+gateway:
+  service:
+    type: ClusterIP
+
+singleBinary:
+  replicas: 1
+  # 目前無 resources，QoS 是 BestEffort，節點一有記憶體壓力就先被處理。
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      memory: 16Gi
+  persistence:
+    enabled: true
+    size: 20Gi
+
+write:
+  replicas: 0
+read:
+  replicas: 0
+backend:
+  replicas: 0
+
+resultsCache:
+  enabled: false
+chunksCache:
+  enabled: false

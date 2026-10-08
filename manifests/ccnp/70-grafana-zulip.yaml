@@ -1,0 +1,56 @@
+---
+# 70 — Grafana 告警送往 Zulip
+#
+# 走 Zulip 原生的 grafana 整合端點 (/api/v1/external/grafana)，
+# 它會解析 Grafana 的 webhook payload，並以 [alertname] 當 topic。
+#
+# 目標是 zulip 的 Service (port 80)，不經 Gateway：
+# 走 Gateway 不但要多一跳，策略上也省不掉這條規則
+# (Cilium Gateway 代替客戶端檢查「客戶端 -> 後端」)。
+#
+# 一如往常，兩個方向都要放行。
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-grafana-to-zulip
+spec:
+  description: "Allow Grafana to post alerts to Zulip"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: observability
+      k8s:app: grafana
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: zulip
+            k8s:app.kubernetes.io/name: zulip
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-zulip-from-grafana
+spec:
+  description: "Allow Zulip to accept webhook posts from Grafana"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: zulip
+      k8s:app.kubernetes.io/name: zulip
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            k8s:app: grafana
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP

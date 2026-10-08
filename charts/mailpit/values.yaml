@@ -1,0 +1,78 @@
+---
+replicaCount: 1
+
+image:
+  repository: axllent/mailpit
+  # 留空則採用 Chart.yaml 的 appVersion
+  tag: ""
+  pullPolicy: IfNotPresent
+
+smtp:
+  port: 1025
+  # 開發環境：接受任何帳密、允許未加密連線。
+  # 正式環境絕對不要這樣設 —— 等於開放任何人匿名投遞。
+  authAcceptAny: true
+  authAllowInsecure: true
+
+ui:
+  port: 8025
+  # 設了就會要求登入 Web UI，格式為 "使用者:bcrypt雜湊"。留空表示不設密碼
+  authFile: ""
+
+# 保留的郵件上限，超過會丟棄最舊的。0 表示不限制
+maxMessages: 500
+
+persistence:
+  # 關閉時郵件只存在記憶體，Pod 重啟就清空。
+  # 開發環境多半不需要保留，開啟後會以 SQLite 存到 PVC
+  enabled: false
+  size: 1Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+
+httpRoute:
+  enabled: true
+  hostnames:
+    - mailpit.the-one.k8s
+  parentRefs:
+    - name: default
+      namespace: kube-system
+
+# Cilium CiliumClusterwideNetworkPolicy。
+# 這個叢集是 default-deny，不放行的話 SMTP 與 Web UI 都不通，
+# 而且症狀是 timeout，看不出少了哪一段
+networkPolicy:
+  enabled: true
+  # 允許哪些 namespace 的 Pod 寄信進來。
+  # 注意 default-deny 兩個方向都擋，所以除了 mailpit 的 ingress，
+  # 也會一併產生寄件端的 egress 放行
+  allowedSenderNamespaces:
+    - zulip
+    - kube-security
+    - observability
+  # 放行 Cilium Gateway 轉發進來的 Web UI 流量 (reserved:ingress 身分)
+  allowGatewayIngress: true
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}

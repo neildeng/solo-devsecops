@@ -1,0 +1,35 @@
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaContactPoint
+metadata:
+  name: grafanacontactpoint-default
+spec:
+  name: DEFAULT
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  # Editing ContactPoints in the UI is disabled by default
+  editable: false # editable is immutable and can only be set at creation
+  receivers:
+    - uid: default-email
+      type: email
+      settings:
+        subject: Grafana Alert
+      valuesFrom:
+        - targetPath: addresses
+          valueFrom:
+            secretKeyRef:
+              name: contacts
+              key: alert-mails
+    - uid: default-zulip
+      type: webhook
+      # 偵測類告警是「事件」而非「狀態」，視窗過後的 resolved 通知沒有意義
+      disableResolveMessage: true
+      settings:
+        httpMethod: POST
+      valuesFrom:
+        - targetPath: url
+          valueFrom:
+            secretKeyRef:
+              name: zulip-grafana-webhook
+              key: url

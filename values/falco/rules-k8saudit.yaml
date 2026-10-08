@@ -1,0 +1,361 @@
+# KOAD Falco Rules — k8s_audit source
+#
+# 這些規則的 source 是 k8s_audit，不是 syscall。
+# 需要先啟用 Falco 的 k8saudit plugin，並讓 API Server 把 audit log
+# 送到 plugin（webhook 或 static file 兩種模式，見 values-custom.yaml）。
+# 沒有 plugin 時，這份檔案載入後規則不會觸發，也不會報錯。
+#
+# jevt.value[...] 使用 JSON Pointer，欄位名稱中的 "/" 要用 "~1" 轉義。
+
+####################################################################
+# 共用 macro
+####################################################################
+
+- macro: koad_audit_create
+  condition: ka.verb = create
+
+- macro: koad_audit_delete
+  condition: ka.verb = delete
+
+# 系統自身的操作（controller、node）排除掉，避免整個叢集狂噴告警
+- macro: koad_not_system_user
+  condition: >
+    not ka.user.name startswith "system:" and
+    not ka.user.name in (kubernetes-admin)
+
+# Day 7：允許建立 kube-system SA 的正常來源，其餘一律告警
+- list: kube_system_sa_creators
+  items: ["system:kube-controller-manager", "system:apiserver", "kubernetes-admin"]
+
+# 安全與偵測相關的命名空間。
+#
+# 原本是上游範例的預設值 [falco, kyverno, gatekeeper-system, security,
+# trivy-system]，這五個在本叢集一個都不存在，所以 S23 與
+# Security Namespace Modified 兩條規則永遠不可能匹配 —— 規則載入成功、
+# 條件正確，只是比對的名稱不對，而且不會有任何錯誤訊息。
+#
+# 本叢集的實際分布：
+#   kube-security  Falco、Wazuh (manager / indexer / dashboard / agent)
+#   observability  Alloy、Loki、Grafana、Prometheus
+#
+# observability 要納入：Alloy 是整條偵測管線的傳輸層，刪掉它等於讓
+# SOC 失明，屬於 T1562 Impair Defenses 的範疇，與刪掉 Falco 同級。
+#
+# kyverno 保留但目前未部署 (clusterpolicies.kyverno.io CRD 不存在)，
+# 裝上去之後這兩條規則會自動涵蓋。
+- list: koad_security_namespaces
+  items: [kube-security, observability, kyverno]
+
+####################################################################
+# TA0002 Execution
+####################################################################
+
+- rule: KOAD S06 Privileged Pod Created
+  desc: 偵測透過 API 建立特權 Pod 或掛載宿主機根目錄
+  condition: >
+    kevt and pod and koad_audit_create and
+    (ka.req.pod.containers.privileged intersects (true) or
+     ka.req.pod.volumes.hostpath intersects ("/"))
+  output: >
+    Privileged pod created
+    (user=%ka.user.name ns=%ka.target.namespace pod=%ka.target.name
+     images=%ka.req.pod.containers.image)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1610, execution]
+
+- rule: KOAD S07 CronJob Created
+  desc: 偵測 CronJob 建立（排程持久化）
+  condition: >
+    kevt and koad_audit_create and
+    ka.target.resource = cronjobs and
+    koad_not_system_user
+  output: >
+    CronJob created
+    (user=%ka.user.name ns=%ka.target.namespace name=%ka.target.name)
+  priority: WARNING
+  source: k8s_audit
+  tags: [KOAD, T1053, execution]
+
+####################################################################
+# TA0003 Persistence
+####################################################################
+
+- rule: KOAD S09 ClusterRoleBinding Created
+  desc: 偵測 ClusterRoleBinding 建立（RBAC 竄改提權）
+  condition: >
+    kevt and koad_audit_create and
+    ka.target.resource = clusterrolebindings
+  output: >
+    ClusterRoleBinding created
+    (user=%ka.user.name name=%ka.target.name
+     role=%ka.req.binding.role subjects=%ka.req.binding.subjects)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1098, persistence]
+
+- rule: KOAD S09b Binding To Cluster Admin
+  desc: 偵測任何綁定到 cluster-admin 的行為
+  condition: >
+    kevt and koad_audit_create and
+    ka.target.resource in (clusterrolebindings, rolebindings) and
+    ka.req.binding.role = cluster-admin
+  output: >
+    Binding to cluster-admin created
+    (user=%ka.user.name name=%ka.target.name ns=%ka.target.namespace
+     subjects=%ka.req.binding.subjects)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1098, persistence]
+
+- rule: KOAD S10 ServiceAccount in kube-system
+  desc: 偵測於 kube-system 建立 ServiceAccount（後門 SA 藏在系統 SA 之中）
+  condition: >
+    kevt and koad_audit_create and
+    ka.target.resource = serviceaccounts and
+    ka.target.namespace = kube-system and
+    not ka.user.name in (kube_system_sa_creators)
+  output: >
+    ServiceAccount created in kube-system
+    (user=%ka.user.name name=%ka.target.name)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1136, persistence]
+
+- rule: KOAD S10b Long Lived Token Requested
+  desc: 偵測以 TokenRequest 簽發長效 token
+  condition: >
+    kevt and koad_audit_create and
+    ka.target.subresource = token and
+    koad_not_system_user
+  output: >
+    ServiceAccount token requested
+    (user=%ka.user.name ns=%ka.target.namespace sa=%ka.target.name)
+  priority: WARNING
+  source: k8s_audit
+  tags: [KOAD, T1136, persistence]
+
+- rule: KOAD S11 Admission Webhook Modified
+  desc: 偵測 Mutating/Validating Webhook 設定異動（惡意 sidecar 注入的前置動作）
+  condition: >
+    kevt and
+    ka.verb in (create, update, patch, delete) and
+    ka.target.resource in (mutatingwebhookconfigurations, validatingwebhookconfigurations) and
+    koad_not_system_user
+  output: >
+    Admission webhook configuration changed
+    (user=%ka.user.name verb=%ka.verb name=%ka.target.name)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1543, persistence]
+
+####################################################################
+# TA0005 Defense Evasion
+####################################################################
+
+- rule: KOAD S22 Pod in kube-system Without System Label
+  desc: 偵測非系統使用者在 kube-system 建立 Pod（偽裝成系統元件）
+  condition: >
+    kevt and pod and koad_audit_create and
+    ka.target.namespace = kube-system and
+    koad_not_system_user
+  output: >
+    Non-system pod created in kube-system
+    (user=%ka.user.name name=%ka.target.name images=%ka.req.pod.containers.image)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1036, defense-evasion]
+
+- rule: KOAD S23 Security Tool Deletion
+  desc: 偵測刪除安全工具的 DaemonSet/Deployment（癱瘓偵測）
+  # 刻意不含 pods：刪掉 Falco 的 Pod 不會移除偵測能力，DaemonSet 幾秒
+  # 內就會重建；而 rollout 時被刪除的舊 Pod 會讓每次 helm upgrade 都
+  # 產生「安全工具被刪除」的 CRITICAL 告警。實測一次 Falco 升級就由
+  # daemon-set-controller 與 system:node:* 觸發了 4 筆誤報。
+  # 真正的訊號是 DaemonSet/Deployment 本身被刪除 —— 那兩者在 rollout
+  # 時只會被 patch，不會被刪除，所以沒有誤報來源。
+  # 也刻意不加 koad_not_system_user：攻擊者可能利用遭竊的服務帳號來
+  # 刪除，排除 system: 會放掉那條路徑。
+  condition: >
+    kevt and koad_audit_delete and
+    ka.target.resource in (daemonsets, deployments) and
+    ka.target.namespace in (koad_security_namespaces)
+  output: >
+    Security tool deletion detected
+    (user=%ka.user.name resource=%ka.target.resource
+     name=%ka.target.name ns=%ka.target.namespace)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1685, T1562, defense-evasion]
+
+- rule: KOAD S23b Kyverno Policy Removed
+  desc: 偵測刪除或停用 Kyverno ClusterPolicy
+  condition: >
+    kevt and
+    ka.verb in (delete, update, patch) and
+    ka.target.resource in (clusterpolicies, policies)
+  output: >
+    Kyverno policy modified or deleted
+    (user=%ka.user.name verb=%ka.verb name=%ka.target.name)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1685, T1562, defense-evasion]
+
+####################################################################
+# TA0006 Credential Access
+####################################################################
+
+- rule: KOAD S26b Secret Enumeration
+  desc: 偵測跨 namespace 列舉 Secret
+  condition: >
+    kevt and
+    ka.verb = list and
+    ka.target.resource = secrets and
+    ka.target.namespace = "" and
+    koad_not_system_user
+  output: >
+    Cluster-wide secret enumeration
+    (user=%ka.user.name uri=%ka.uri)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1552, credential-access]
+
+####################################################################
+# TA0007 Discovery
+####################################################################
+
+- rule: KOAD S29b RBAC Enumeration Via API
+  desc: 偵測透過 API 列舉 RBAC 資源
+  condition: >
+    kevt and
+    ka.verb in (list, get) and
+    ka.target.resource in (clusterroles, clusterrolebindings, roles, rolebindings) and
+    koad_not_system_user
+  output: >
+    RBAC enumeration via API
+    (user=%ka.user.name resource=%ka.target.resource name=%ka.target.name)
+  priority: NOTICE
+  source: k8s_audit
+  tags: [KOAD, T1069, discovery]
+
+####################################################################
+# TA0008 Lateral Movement
+####################################################################
+
+# 原本想寫「SA 讀取自身 namespace 以外的 Secret」，也就是
+#   not ka.user.name contains ka.target.namespace
+# 但 **Falco 不支援欄位對欄位比較** —— 右邊只能是常數或 list，
+# 寫成那樣會被當字面字串，規則形同永遠成立。
+#
+# Falco 做的是「單一事件的樣式比對」，不做關聯分析。
+# 真正的跨 namespace 判斷要放到下游（LogQL / Grafana）去比兩個欄位，
+# 這裡只負責把「SA 存取高價值 namespace 的 Secret」這個子集撈出來。
+- list: koad_sensitive_namespaces
+  items: [kube-system, falco, kyverno, observability, security]
+
+- rule: KOAD S30 Secret Access In Sensitive Namespace
+  desc: 偵測 ServiceAccount 讀取高價值 namespace 的 Secret
+  condition: >
+    kevt and
+    ka.verb in (get, list) and
+    ka.target.resource = secrets and
+    ka.user.name startswith "system:serviceaccount:" and
+    ka.target.namespace in (koad_sensitive_namespaces) and
+    not ka.user.name startswith "system:serviceaccount:kube-system:"
+  output: >
+    Secret access in sensitive namespace
+    (user=%ka.user.name target_ns=%ka.target.namespace
+     secret=%ka.target.name verb=%ka.verb)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1550, lateral-movement]
+
+- rule: KOAD S30b Pod Exec Or Attach
+  desc: 偵測 exec/attach 進入既有 Pod（橫向移動）
+  condition: >
+    kevt and
+    ka.target.subresource in (exec, attach) and
+    koad_not_system_user
+  output: >
+    Pod exec or attach
+    (user=%ka.user.name ns=%ka.target.namespace pod=%ka.target.name
+     subresource=%ka.target.subresource)
+  priority: WARNING
+  source: k8s_audit
+  tags: [KOAD, T1609, lateral-movement]
+
+####################################################################
+# TA0040 Impact
+####################################################################
+
+- rule: KOAD S31 Persistent Data Deleted
+  desc: 偵測刪除 PVC / PV / Namespace 造成資料破壞
+  condition: >
+    kevt and koad_audit_delete and
+    ka.target.resource in (persistentvolumeclaims, persistentvolumes, namespaces) and
+    koad_not_system_user
+  output: >
+    Persistent data resource deleted
+    (user=%ka.user.name resource=%ka.target.resource
+     name=%ka.target.name ns=%ka.target.namespace)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1485, impact]
+
+- rule: KOAD S33 Backup Job Removed
+  desc: 偵測刪除備份 CronJob / 停用還原能力
+  condition: >
+    kevt and koad_audit_delete and
+    ka.target.resource in (cronjobs, jobs) and
+    ka.target.name contains "backup"
+  output: >
+    Backup job deleted
+    (user=%ka.user.name ns=%ka.target.namespace name=%ka.target.name)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1490, impact]
+
+####################################################################
+# 自我保護 — 安全工具被動手腳 (Day 15)
+####################################################################
+
+- rule: KOAD Security Namespace Modified
+  desc: 偵測安全工具 namespace 內任何資源被刪除或修改
+  condition: >
+    kevt and
+    ka.target.namespace in (koad_security_namespaces) and
+    ka.verb in (delete, patch, update) and
+    koad_not_system_user
+  output: >
+    Security namespace being modified or deleted
+    (namespace=%ka.target.namespace verb=%ka.verb
+     user=%ka.user.name resource=%ka.target.resource name=%ka.target.name)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [KOAD, T1685, T1562, defense-evasion, self-protection]
+
+# ---------------------------------------------------------------------------
+# 停用會遮蔽 KOAD 規則的內建規則
+#
+# Falco 一個事件只會觸發「第一條匹配」的規則，而載入順序是
+# falco_rules.yaml → k8s_audit_rules.yaml → rules.d，所以內建規則永遠
+# 先匹配。優先級高低不影響順序，只決定規則會不會被載入 —— 低於
+# falco.yaml 的 priority: notice 的內建規則不會載入，也就不會遮蔽。
+#
+# 不能改成把 rules.d 排在最前面：本檔的規則用到 k8s_audit_rules.yaml
+# 定義的 kevt macro，順序反過來會整檔載入失敗
+#   LOAD_ERR_VALIDATE: Undefined macro 'kevt' used in filter.
+#
+# 實測對照：新增 pods 稽核後建立一個特權 Pod，只有內建的
+# Create Privileged Pod (Warning) 觸發，KOAD S06 (Critical) 沒有 ——
+# 資料來源存在、條件成立、優先級更高，仍然輸給載入順序。
+#
+# 只停用這一條。其餘三條遮蔽者刻意保留：
+#   K8s Secret Get Successfully → 遮蔽 S30，但 Wazuh 的 100121/100122
+#     規則是建立在它上面的，停用會一起壞掉
+#   Attach/Exec Pod            → 遮蔽 S30b，但 S30b 排除了
+#     kubernetes-admin，而本叢集的 exec 全部來自該身分，停用等於
+#     用「不會觸發的規則」換掉「會觸發的規則」，淨損失
+#   Pod Created in Kube Namespace → 遮蔽 S22，同樣的排除問題
+- rule: Create Privileged Pod
+  enabled: false

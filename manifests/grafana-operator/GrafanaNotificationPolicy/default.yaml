@@ -1,0 +1,33 @@
+---
+# 預設通知路由
+#
+# 沒有這個的話，Grafana 的預設路由 receiver 是 "empty" —— 告警規則
+# 照常評估、照常轉為 Alerting 狀態，但不會送到任何地方。
+# 這是整條鏈最容易漏掉的一環：CR 的 status 都是 ApplySuccessful，
+# 規則在 UI 上也看得到，就是沒有人收到通知。
+#
+# DEFAULT 這個 contact point 來自 GrafanaContactPoint/default.yaml，
+# 內含 email（經 Mailpit）與 Zulip webhook 兩個 receiver。
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaNotificationPolicy
+metadata:
+  name: default
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  # 欄位名稱是 snake_case（group_by / group_wait / repeat_interval），
+  # 不是 Grafana UI 與 API 慣用的 camelCase。寫錯會被 strict decoding
+  # 直接擋下，算是友善的失敗。
+  route:
+    receiver: DEFAULT
+    # 同一組告警先聚合 30 秒再送，避免多條規則同時觸發時洗版
+    group_by:
+      - alertname
+      - severity
+    group_wait: 30s
+    group_interval: 5m
+    # 持續中的告警每 4 小時才重複提醒一次。
+    # Wazuh 那端已用 ignore 做過抑制，這裡是第二道。
+    repeat_interval: 4h

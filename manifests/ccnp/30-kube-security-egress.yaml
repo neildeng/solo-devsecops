@@ -1,0 +1,37 @@
+---
+# 30 — kube-security 的對外連線 (FQDN)
+#
+# falcoctl 在 Pod 啟動時要抓 plugin 與規則，之後 sidecar 持續檢查更新。
+# 這些目標走 CDN，IP 會變，所以必須用 toFQDNs 而非 toCIDR。
+#
+# toFQDNs 依賴 DNS proxy，而 proxy 由 10-infra-baseline 的 rules.dns
+# 在全叢集啟用 —— 這裡不需要也不應該再宣告一次 DNS 規則。
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-kube-security-egress
+spec:
+  description: "Allow kube-security to fetch artifacts and images by FQDN"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: kube-security
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egress:
+    - toFQDNs:
+        # falcoctl 的 index 與 OCI artifacts。
+        # 逐一列出而非用萬用字元：ghcr.io 的 blob 會轉址到
+        # pkg-containers.githubusercontent.com，漏掉它會變成
+        # 「index 抓得到、artifact 下載到一半卡住」這種難查的症狀。
+        - matchName: "falcosecurity.github.io"
+        - matchName: "ghcr.io"
+        - matchName: "pkg-containers.githubusercontent.com"
+        - matchName: "objects.githubusercontent.com"
+        - matchName: "tuf-repo-cdn.sigstore.dev"
+        # 容器映像來源
+        - matchPattern: "*.docker.io"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

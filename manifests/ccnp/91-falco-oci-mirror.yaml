@@ -1,0 +1,30 @@
+---
+# 91 — Falco 的 artifact sidecar 存取本機 OCI mirror
+#
+# mirror 容器接在 kind 的 docker network，IP 192.168.247.8，與節點同網段
+# (.5/.6/.7/.9)。但它不是節點，Cilium 給它的身分是 reserved:world，
+# 所以不能靠 toEntities: [host, remote-node]，要用 toCIDR。
+#
+# 這條是為了加速開發迭代：實測 5 MB 的 plugin blob 直連 ghcr.io 要 148 秒，
+# mirror 快取命中後是 0.008 秒。少了它，artifact sidecar 會改走 ghcr.io，
+# 表面上還是會成功，只是慢得像壞掉。
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-falco-oci-mirror
+spec:
+  description: "Allow Falco artifact sidecar to pull from the local OCI mirror"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: kube-security
+      k8s:app.kubernetes.io/name: falco
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egress:
+    - toCIDR:
+        - 192.168.247.8/32
+      toPorts:
+        - ports:
+            - port: "5000"
+              protocol: TCP

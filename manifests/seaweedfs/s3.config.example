@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "SeaweedFS 的 S3 身分設定。複製成同目錄的 s3.config 再填入自己的金鑰 ——",
+    "s3.config 已列入 .gitignore，不會進版控。",
+    "",
+    "產生金鑰：",
+    "  openssl rand -hex 8    # accessKey",
+    "  openssl rand -hex 16   # secretKey",
+    "",
+    "loki 這組身分的 accessKey / secretKey 會在 bootstrap 中被取出，",
+    "寫成 observability 命名空間的 loki-s3-credentials secret。"
+  ],
+  "identities": [
+    {
+      "name": "anvAdmin",
+      "credentials": [
+        {
+          "accessKey": "REPLACE_WITH_ADMIN_ACCESS_KEY",
+          "secretKey": "REPLACE_WITH_ADMIN_SECRET_KEY"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write"]
+    },
+    {
+      "name": "anvReadOnly",
+      "credentials": [
+        {
+          "accessKey": "REPLACE_WITH_READONLY_ACCESS_KEY",
+          "secretKey": "REPLACE_WITH_READONLY_SECRET_KEY"
+        }
+      ],
+      "actions": ["Read"]
+    },
+    {
+      "name": "loki",
+      "credentials": [
+        {
+          "accessKey": "REPLACE_WITH_LOKI_ACCESS_KEY",
+          "secretKey": "REPLACE_WITH_LOKI_SECRET_KEY"
+        }
+      ],
+      "actions": ["Read:loki-chunks", "Write:loki-chunks", "List:loki-chunks"]
+    }
+  ]
+}

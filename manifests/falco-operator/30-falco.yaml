@@ -1,0 +1,48 @@
+---
+# Falco 本體。operator 依 Plugin / Rulesfile / Config CR 組出 DaemonSet。
+#
+# 這個 CR 的 spec 很精簡（podTemplateSpec / replicas / strategy / type /
+# updateStrategy / version），沒有 service 欄位 —— k8saudit 的 webhook
+# Service 必須自己建，見 40-k8saudit-webhook-svc.yaml。
+apiVersion: instance.falcosecurity.dev/v1alpha1
+kind: Falco
+metadata:
+  name: falco
+  namespace: kube-security
+spec:
+  type: DaemonSet
+  podTemplateSpec:
+    spec:
+      # containers 是必填，即使不改任何東西也要列出來
+      # （官方 quickstart 也是這樣寫）
+      containers:
+        - name: falco
+          tty: true
+      initContainers:
+        # artifact-operator 是 native sidecar，負責把 Plugin / Rulesfile
+        # 的 OCI artifact 拉進 Pod。
+        #
+        # 預設探針在慢速網路下會造成死迴圈：拉取期間健康端點停滯，
+        # failureThreshold 3 × periodSeconds 10 約 45 秒就被殺掉，
+        # 重啟後又從頭下載，永遠拉不完。實測四個節點只有一個剛好
+        # 搶到足夠頻寬而成功，其餘三個卡在 Init 並反覆重啟。
+        #
+        # 這裡把容忍時間放寬到約 10 分鐘。本叢集要拉 4 個 plugin
+        # 加 2 個 ruleset，每個節點各拉一份。
+        - name: artifact-operator
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60

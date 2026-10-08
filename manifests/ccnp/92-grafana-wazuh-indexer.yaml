@@ -1,0 +1,56 @@
+---
+# 92 — Grafana 讀取 Wazuh 的告警索引
+#
+# 讓 Grafana 以 Wazuh 的索引為資料來源發告警，等於由 Wazuh 的規則層
+# 決定「什麼是事件」，Grafana 只負責送出。這條路不必覆寫 Wazuh 的
+# ossec.conf（chart 沒有開 integration / email 的設定入口，Wazuh 也
+# 沒有 conf.d，要加只能整份接管 293 行）。
+#
+# OpenSearch 的 compatibility.override_main_response_version 已開啟，
+# 所以能用 Grafana 內建的 Elasticsearch 資料來源，不需額外外掛。
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-grafana-wazuh-indexer
+spec:
+  description: "Allow Grafana to query the Wazuh indexer for alerting"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: observability
+      k8s:app: grafana
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-security
+            k8s:app: wazuh-indexer
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+---
+# 目的端：indexer 接受來自 Grafana 的查詢
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-wazuh-indexer-from-grafana
+spec:
+  description: "Allow the Wazuh indexer to accept queries from Grafana"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: kube-security
+      k8s:app: wazuh-indexer
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            k8s:app: grafana
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP

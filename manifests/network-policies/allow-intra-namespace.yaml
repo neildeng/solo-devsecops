@@ -1,0 +1,25 @@
+---
+# 同一個 namespace 內的 Pod 可以互連。
+#
+# 設計取捨：把「namespace 邊界」當成信任邊界。
+# 對外連線仍受 default-deny 管控（只有 DNS / API Server / falcoctl FQDN 放行），
+# 但內部元件之間不逐條列舉 —— 否則 Falco 這種多元件套件每升級一次就要改策略。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  labels:
+    defense: "true"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # from 裡的 podSelector: {} = 與本策略同 namespace 的所有 Pod。
+    # 注意這跟 spec.podSelector: {} 意義不同：後者是「這條策略作用在誰身上」。
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}

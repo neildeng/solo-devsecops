@@ -1,0 +1,348 @@
+---
+cluster:
+  name: "the-one"
+
+global:
+  maxCacheSize: 100000
+
+destinations:
+  localPrometheus:
+    type: prometheus
+    url: http://prometheus-server/api/v1/write
+  localLoki:
+    type: loki
+    url: http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push
+    tenantId: "soc"
+
+dataProcessors:
+  # A single custom processor that scrubs email addresses out of log records, in BOTH
+  # Loki and OTLP form. The chart forwards data into each pipeline's `input` and the
+  # pipeline forwards its result to the chart-generated output sink (documented name).
+  scrub-pii:
+    type: custom
+    logs:
+      loki:
+        enabled: true
+        input: loki.process.scrub_pii_loki.receiver
+        config: |
+          loki.process "scrub_pii_loki" {
+            stage.replace {
+              expression = "([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})"
+              replace    = "[REDACTED-EMAIL]"
+            }
+            forward_to = [loki.process.scrub_pii_out_logs_loki.receiver]
+          }
+      otlp:
+        enabled: true
+        input: otelcol.processor.transform.scrub_pii_otlp.input
+        config: |
+          otelcol.processor.transform "scrub_pii_otlp" {
+            error_mode = "ignore"
+            log_statements {
+              context = "log"
+              statements = [
+                "replace_pattern(body, \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}\", \"[REDACTED-EMAIL]\")",
+              ]
+            }
+            output {
+              logs = [otelcol.processor.batch.scrub_pii_out_logs_otlp.input]
+            }
+          }
+  static-label:
+    type: custom
+    metrics:
+      prometheus:
+        enabled: true
+        input: prometheus.relabel.static_label_metrics.receiver
+        config: |
+          prometheus.relabel "static_label_metrics" {
+            rule {
+              target_label = "region"
+              replacement  = "central"
+            }
+            forward_to = [prometheus.relabel.static_label_out_metrics_prometheus.receiver]
+          }
+    logs:
+      loki:
+        enabled: true
+        input: loki.process.static_label_logs.receiver
+        config: |
+          loki.process "static_label_logs" {
+            stage.static_labels {
+              values = {
+                region = "central",
+              }
+            }
+            forward_to = [loki.process.static_label_out_logs_loki.receiver]
+          }
+    traces:
+      otlp:
+        enabled: true
+        input: otelcol.processor.transform.static_label_traces.input
+        config: |
+          otelcol.processor.transform "static_label_traces" {
+            error_mode = "ignore"
+            trace_statements {
+              context = "resource"
+              statements = [
+                "set(attributes[\"region\"], \"central\")",
+              ]
+            }
+            output {
+              traces = [otelcol.processor.batch.static_label_out_traces_otlp.input]
+            }
+          }
+    profiles:
+      pyroscope:
+        enabled: true
+        input: pyroscope.relabel.static_label_profiles.receiver
+        config: |
+          pyroscope.relabel "static_label_profiles" {
+            rule {
+              target_label = "region"
+              replacement  = "central"
+            }
+            forward_to = [pyroscope.relabel.static_label_out_profiles_pyroscope.receiver]
+          }
+
+
+clusterEvents:
+  enabled: true
+  # 必須明確指定，空字串不會自動挑選 —— chart 的 validations.yaml 會擋下來
+  collector: alloy-singleton
+
+selfReporting:
+  enabled: false
+
+#
+# Collectors (Alloy instances)
+#
+
+# Define collectors.
+# @section -- Collectors
+collectors:
+  # clusterEvents 需要帶 singleton preset 的 collector (單一副本，
+  # 避免多個實例重複送出同一批事件)。少了它，clusterEvents.enabled
+  # 設 true 也不會有任何資料 —— 而且不會報錯。
+  alloy-singleton:
+    presets: [ singleton ]
+    liveDebugging:
+      enabled: true
+    alloy:
+      stabilityLevel: public-preview
+      enableReporting: false
+    serviceMonitor:
+      enabled: true
+      interval: "15s"
+
+  alloy-logs:
+    presets: [ filesystem-log-reader, daemonset ]
+    liveDebugging:
+      enabled: true
+    alloy:
+      stabilityLevel: public-preview
+      enableReporting: false
+      clustering:
+        enabled: true
+      # 預設 /tmp/alloy 落在容器的可寫層，Pod 一重啟就歸零，
+      # loki.source.file 會把每個檔案從頭重讀一遍 —— 結果是整批事件
+      # 重複送進 Wazuh，而且重啟當下的突發流量會灌爆 syslog exporter
+      # 的佇列 (sending queue is full，那些是直接丟棄不是延後送)。
+      # 實測同一筆 Falco 事件在 Wazuh 裡出現 2 次就是這個原因。
+      storagePath: /var/lib/alloy
+      mounts:
+        extra:
+          - name: alloy-positions
+            mountPath: /var/lib/alloy
+    controller:
+      volumes:
+        extra:
+          # 用 hostPath 而非 PVC：這是 DaemonSet，positions 本來就是
+          # 逐節點的狀態，而 Pod 永遠回到同一個節點。
+          - name: alloy-positions
+            hostPath:
+              path: /var/lib/alloy-positions
+              type: DirectoryOrCreate
+    serviceMonitor:
+      enabled: true
+      interval: "15s"
+    extraConfig: |
+      // chart 只在「有功能用到該目的地」的 collector 上產生 loki.write。
+      // alloy-logs 沒有啟用任何送往 Loki 的 chart 功能 (例如 podLogs)，
+      // 所以 loki.write.localloki 在這支並不存在，extraConfig 直接引用它
+      // 會讓 Alloy 啟動失敗 (component does not exist or is out of scope)。
+      //
+      // 這裡自行宣告一個供 extraConfig 使用。名稱刻意不叫 localloki，
+      // 以免日後啟用 podLogs 時與 chart 產生的元件撞名。
+      // url 與 tenant 需與上方 destinations.localLoki 保持一致。
+      loki.write "extra_localloki" {
+        endpoint {
+          url               = "http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push"
+          tenant_id         = "soc"
+          retry_on_http_429 = true
+        }
+        external_labels = {
+          "cluster" = "the-one",
+        }
+      }
+
+      local.file_match "suricata" {
+        path_targets = [
+          {
+            __path__  = "/var/log/suricata/fast.log",
+            job       = "integrations/suricata",
+            component = "fast",
+          },
+          {
+            __path__  = "/var/log/suricata/eve.json",
+            job       = "integrations/suricata",
+            component = "eve",
+          },
+          {
+            __path__  = "/var/log/kubernetes/kube-apiserver-audit.log",
+            job       = "integrations/kube-apiserver-audit",
+            component = "kube-apiserver-audit",
+          },
+        ]
+      }
+      
+      loki.source.file "suricata" {
+        targets    = local.file_match.suricata.targets
+        forward_to = [
+          loki.write.extra_localloki.receiver,
+          loki.process.suricata_alerts.receiver,
+        ]
+      }
+
+      // ---- Suricata → Wazuh (syslog) ----
+      //
+      // 第三條進 Wazuh 的來源，與 Falco、k8s_audit 平行。
+      // 分流的原則和 Falco 那條一樣：Loki 收全量供 Threat Hunting，
+      // Wazuh 只收需要「判斷」的部分。
+      //
+      // 只送 eve.json 的 alert，理由各自不同：
+      //   fast.log  —— 與 eve.json 的 alert 是同一批事件的兩種格式，
+      //                兩邊都送等於每個告警在 Wazuh 裡出現兩次
+      //   audit log —— 已由 Falco 的 k8saudit plugin 覆蓋
+      //   其餘 event_type —— http/dns/tls/ssh/stats 是脈絡不是告警。
+      //                實測 16 分鐘 21147 筆事件裡 alert 只佔 0.75%，
+      //                整份送進去的話 Wazuh 要為 133 倍的資料量做規則比對
+      loki.process "suricata_alerts" {
+        // 第一關：濾掉 fast.log 與 audit log。
+        // selector 比對的是 local.file_match 設的標籤，不是內容。
+        stage.match {
+          selector = `{component!="eve"}`
+          action   = "drop"
+        }
+
+        stage.json {
+          expressions = {
+            event_type = "event_type",
+          }
+        }
+
+        // 第二關：只留 alert。stage.drop 是「命中就丟」，沒有反向的 keep，
+        // 所以這裡列舉要丟的種類 —— 需與 charts/suricata/values.yaml 的
+        // suricata.eve.types 保持一致，那邊新增種類時這裡要跟著加。
+        stage.drop {
+          source              = "event_type"
+          expression          = "^(http|dns|tls|ssh|flow|stats|fileinfo|anomaly)$"
+          drop_counter_reason = "suricata_not_alert"
+        }
+
+        forward_to = [otelcol.receiver.loki.suricata_bridge.receiver]
+      }
+
+      otelcol.receiver.loki "suricata_bridge" {
+        output {
+          logs = [otelcol.processor.transform.suricata_syslog.input]
+        }
+      }
+
+      otelcol.processor.transform "suricata_syslog" {
+        error_mode = "ignore"
+
+        log_statements {
+          context    = "log"
+          statements = [
+            // appname 必須與 wazuh.yaml localDecoder 的 program_name 一致
+            `set(attributes["appname"], "suricata")`,
+            `set(attributes["hostname"], "alloy")`,
+            `set(attributes["message"], body)`,
+          ]
+        }
+
+        output {
+          logs = [otelcol.exporter.syslog.wazuh.input]
+        }
+      }
+
+      // ---- Falco → Wazuh (syslog) ----
+      //
+      // 與 Loki 那條是平行的分流：Loki 收全量原始日誌供查詢，
+      // Wazuh 收同一份做規則比對與 MITRE 對應。
+      //
+      // 四個缺一不可、且缺了都不會報錯的條件，詳見
+      // manifests/alloy/falco-to-wazuh.alloy 的註解。
+      // 其中 stabilityLevel: public-preview 由上面的 alloy 區塊提供。
+      //
+      // glob 的 falco-* 不會誤抓 falcoctl 的容器日誌：
+      // 那些檔名是 ..._kube-security_falcoctl-artifact-follow-*.log，
+      // falcoctl 開頭不符合 falco- 這個樣式。
+      local.file_match "falco" {
+        path_targets = [
+          { __path__ = "/var/log/containers/falco-*_kube-security_falco-*.log" },
+        ]
+      }
+
+      loki.source.file "falco" {
+        targets    = local.file_match.falco.targets
+        forward_to = [loki.process.falco_cri.receiver]
+      }
+
+      // 磁碟上的容器日誌是 CRI 格式而非純 JSON：
+      //   2026-10-07T00:51:19Z stdout F {"hostname":...}
+      // 不剝掉前綴的話 Wazuh 的 JSON_Decoder 解不出欄位，
+      // 事件會掉進兜底規則 1002。
+      loki.process "falco_cri" {
+        stage.cri {}
+        forward_to = [otelcol.receiver.loki.falco_bridge.receiver]
+      }
+
+      otelcol.receiver.loki "falco_bridge" {
+        output {
+          logs = [otelcol.processor.transform.falco_syslog.input]
+        }
+      }
+
+      otelcol.processor.transform "falco_syslog" {
+        error_mode = "ignore"
+
+        log_statements {
+          context    = "log"
+          statements = [
+            // appname → Wazuh 的 program_name，decoder 靠它掛載
+            `set(attributes["appname"], "falco")`,
+            `set(attributes["hostname"], "alloy")`,
+            // syslog exporter 從屬性組訊息，不會自動用 OTel 的 Body。
+            // 少了這行不會報錯，Wazuh 也完全收不到。
+            `set(attributes["message"], body)`,
+          ]
+        }
+
+        output {
+          logs = [otelcol.exporter.syslog.wazuh.input]
+        }
+      }
+
+      otelcol.exporter.syslog "wazuh" {
+        // 只能是 worker：syslog 的 <remote> 區塊只在 worker.conf
+        endpoint = "wazuh-manager-worker.kube-security.svc.cluster.local"
+        port     = 514
+        network  = "tcp"
+        protocol = "rfc3164"
+
+        tls {
+          insecure = true
+        }
+      }

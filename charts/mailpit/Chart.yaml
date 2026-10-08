@@ -1,0 +1,14 @@
+apiVersion: v2
+name: mailpit
+description: 開發用 SMTP 收信服務，取代已停更的 MailHog
+type: application
+version: 0.1.0
+# 與 values.yaml 的 image.tag 預設值連動：tag 留空時會用這個版本
+appVersion: "1.31.4"
+home: https://mailpit.axllent.org/
+sources:
+  - https://github.com/axllent/mailpit
+keywords:
+  - smtp
+  - mail
+  - development

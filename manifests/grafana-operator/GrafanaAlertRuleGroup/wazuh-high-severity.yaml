@@ -1,0 +1,108 @@
+---
+# 由 Wazuh 的規則層決定「什麼是事件」，Grafana 只負責送出
+#
+# 這是「Wazuh 當告警大腦」的中間路線。完整做法是用 Wazuh 自己的
+# <integration> 直接送，但 chart 沒開那個設定入口，而 Wazuh 的
+# ossec.conf 沒有 conf.d，要加只能整份接管 293 行並永久維護。
+# 走 Grafana 可以完全避開那筆成本，代價只是多一跳。
+#
+# 門檻設 level >= 13 的理由：
+#   level 12  Falco 的個別 Critical 事件（100110 / 100125）—— 量大，
+#             只進索引供 Threat Hunting，不通知
+#   level 13  爆發收斂（100130 / 100131）與高價值單一事件（100126
+#             ClusterRoleBinding 變更）
+#   level 14  跨規則的多重 Critical（100132），疑似攻擊進行中
+#
+# 實測對照：一個持續執行指令的特權 Pod 在兩分鐘內產生 133 筆 level 12，
+# 收斂後只有 1 筆 level 14。通知量的差距就是 133:1。
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaAlertRuleGroup
+metadata:
+  name: wazuh-high-severity
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  folderRef: devsecops
+  # 評估間隔。Wazuh 那端已經用 ignore 做過抑制，這裡不必太密集，
+  # 否則同一批事件會在不同評估週期重複計入。
+  interval: 1m
+  rules:
+    - uid: wazuh-high-severity
+      title: Wazuh 高嚴重度告警
+      condition: threshold
+      for: 0m
+      # 沒有資料代表沒有高嚴重度事件，那是正常狀態而非故障
+      noDataState: OK
+      execErrState: Error
+      labels:
+        severity: critical
+        source: wazuh
+      annotations:
+        summary: "Wazuh 偵測到 level 13 以上的事件"
+        description: >-
+          最近 5 分鐘內有 {{ $values.threshold.Value }} 筆 level >= 13 的
+          Wazuh 告警。個別的 level 12 事件不在此列，請到 Wazuh 的
+          Threat Hunting 或 Grafana 的 Loki 查全量。
+      data:
+        - refId: query
+          datasourceUid: wazuh-alerts
+          relativeTimeRange:
+            from: 300
+            to: 0
+          model:
+            refId: query
+            datasource:
+              type: elasticsearch
+              uid: wazuh-alerts
+            # Lucene 語法。rule.level 在 Wazuh 的索引是數值型別。
+            query: "rule.level:>=13"
+            timeField: "@timestamp"
+            metrics:
+              - id: "1"
+                type: count
+            # bucketAggs 不能留空。Grafana 的 Elasticsearch 資料來源
+            # 在告警情境下仍要求 aggregation，否則回
+            #   invalid query, missing metrics and aggregations
+            # 這個錯誤只出現在規則的 health 欄位，CR 的 status 仍是
+            # ApplySuccessful，不看就不會發現。
+            bucketAggs:
+              - id: "2"
+                type: date_histogram
+                field: "@timestamp"
+                settings:
+                  interval: "5m"
+        # date_histogram 會回傳一條時間序列，threshold 只吃單一數值，
+        # 中間必須有 reduce 把它收成一個數。
+        - refId: reduce
+          datasourceUid: __expr__
+          relativeTimeRange:
+            from: 300
+            to: 0
+          model:
+            refId: reduce
+            type: reduce
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: query
+            reducer: sum
+            settings:
+              mode: dropNN
+        - refId: threshold
+          datasourceUid: __expr__
+          relativeTimeRange:
+            from: 300
+            to: 0
+          model:
+            refId: threshold
+            type: threshold
+            datasource:
+              type: __expr__
+              uid: __expr__
+            expression: reduce
+            conditions:
+              - evaluator:
+                  type: gt
+                  params: [0]

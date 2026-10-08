@@ -1,0 +1,70 @@
+// Falco → Alloy → Wazuh (syslog) 的管線
+//
+// 狀態：已獨立驗證通過，尚未併入 values/k8s-monitoring.yaml。
+// 驗證方式是在 alloy-logs 的 Pod 內以 alloy run 跑這份設定，
+// 確認 Wazuh 的 alerts.json 產生 rule 100110 + mitre T1562.001，
+// 且 location 是 Alloy 的 Pod IP（代表真的走網路而非 localhost）。
+//
+// 四個實測得到的必要條件，少任何一個都會「沒有錯誤但也沒有資料」：
+//
+// 1. protocol 必須是 rfc3164。用 rfc5424 時 Wazuh 的 predecoder 只剝掉
+//    <134>，表頭留在訊息裡，沒有 program_name 可供 decoder 掛載，
+//    事件會掉進兜底規則 1002。
+//
+// 2. 必須 set(attributes["message"], body)。syslog exporter 是從「屬性」
+//    組訊息的，不會自動把 OTel 的 Body 當成 syslog 的 message。少了這行
+//    時 exporter 不報任何錯，Wazuh 也完全收不到東西 —— 最難查的一種。
+//
+// 3. appname 決定 Wazuh 的 program_name，必須是 falco，才能對上
+//    values/wazuh.yaml 裡 <program_name>^falco$</program_name> 那條 decoder。
+//
+// 4. 啟動需要 --stability.level=public-preview。otelcol.exporter.syslog
+//    尚未 GA，預設的 generally-available 等級會讓 Alloy 拒絕啟動。
+//
+// 網路由 manifests/ccnp/90-alloy-wazuh-syslog.yaml 放行。
+
+local.file_match "falco" {
+    path_targets = [{__path__ = "/var/log/containers/falco-*_kube-security_falco-*.log"}]
+}
+
+loki.source.file "falco" {
+    targets    = local.file_match.falco.targets
+    forward_to = [otelcol.receiver.loki.bridge.receiver]
+}
+
+otelcol.receiver.loki "bridge" {
+    output {
+        logs = [otelcol.processor.transform.falco.input]
+    }
+}
+
+otelcol.processor.transform "falco" {
+    error_mode = "ignore"
+
+    log_statements {
+        context    = "log"
+        statements = [
+            // appname → Wazuh 的 program_name，decoder 靠它掛載
+            `set(attributes["appname"], "falco")`,
+            `set(attributes["hostname"], "alloy")`,
+            // 沒有這行就什麼都收不到，而且不會報錯
+            `set(attributes["message"], body)`,
+        ]
+    }
+
+    output {
+        logs = [otelcol.exporter.syslog.wazuh.input]
+    }
+}
+
+otelcol.exporter.syslog "wazuh" {
+    // 只能是 worker：syslog 的 <remote> 區塊只寫在 worker.conf
+    endpoint = "wazuh-manager-worker.kube-security.svc.cluster.local"
+    port     = 514
+    network  = "tcp"
+    protocol = "rfc3164"
+
+    tls {
+        insecure = true
+    }
+}

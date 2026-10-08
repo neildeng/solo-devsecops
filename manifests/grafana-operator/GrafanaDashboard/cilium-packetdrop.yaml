@@ -1,0 +1,732 @@
+# Cilium PacketDrop 儀表板
+#
+# 資料來源是 Hubble 的 Prometheus 指標 hubble_drop_total，
+# 不再是 Kubernetes events 的計數。
+#
+# 相依：
+#   - GrafanaDatasource/prometheus.yaml (uid: prometheus)
+#   - GrafanaDatasource/loki.yaml (uid: loki)，僅最下方的原始事件面板需要
+#   - cilium 的 hubble.metrics.enabled 含 "drop:sourceContext=pod;destinationContext=pod"
+#   - manifests/ccnp/80-prometheus-scrape.yaml 的 toEntities: [host, remote-node]，
+#     hubble-metrics 跑在 node IP 的 9965 上，toEndpoints 涵蓋不到
+#
+# 不要設 hubble.metrics.serviceMonitor.enabled。chart 是以「serviceMonitor
+# 未啟用」為條件才加上 prometheus.io/scrape 註記，開啟它會關掉註記，
+# 結果是 hubble_drop_total 完全不存在而且不會有任何錯誤訊息。
+#
+# 實際可用的標籤（已從 9965 的原始輸出確認）：
+#   reason      POLICY_DENIED / UNSUPPORTED_L3_PROTOCOL
+#   protocol    TCP / ICMPv6 ...
+#   source      "namespace/pod"，單一字串而非兩個標籤
+#   destination 同上。空字串代表目的地不是叢集內的 Pod
+#   node        丟棄被記錄在來源端所在的節點
+#
+# 判讀上的三個陷阱：
+#   1. 計數器會在 cilium agent 重啟時歸零，所以一律用 increase/rate，
+#      不要直接取值。
+#   2. 指標是「第一次發生對應丟包時才建立」，完全沒丟包時面板是
+#      無資料而非 0，這是正常的。
+#   3. Prometheus 的資料模型中空字串標籤與不存在的標籤等價，
+#      所以 destination="" 在查詢結果裡看起來像是少了這個標籤。
+#
+# editable 設為 false 是刻意的：這份儀表板由 operator 管理，
+# resyncPeriod 到期時會以本檔案的內容覆寫 Grafana 上的版本，
+# 不會有任何警告。設成唯讀才不會讓人在 UI 上白改一場。
+# 真的要從 UI 取回調整，得在下次 resync 前把 JSON 匯出寫回本檔：
+#
+#   kubectl -n observability exec deploy/grafana-deployment -- \
+#     curl -s -u "root:$GF_PASS" \
+#     http://localhost:3000/api/dashboards/uid/cilium-packetdrop | jq .dashboard
+#
+# 檢查線上版本是否被人改過（updatedBy 非 operator 使用的帳號即是）：
+#
+#   ... /api/dashboards/uid/cilium-packetdrop | jq .meta
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cilium-packetdrop
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  # 指向 GrafanaFolder/devsecops.yaml。值是該 CR 的 metadata.name，
+  # 不是它的 title。資料夾若非 operator 建立則改用 folderUID。
+  folderRef: devsecops
+  resyncPeriod: 5m
+  json: |
+    {
+      "uid": "cilium-packetdrop",
+      "title": "Cilium PacketDrop",
+      "description": "以 Hubble 的 Prometheus 指標呈現 Cilium 的封包丟棄。需要 hubble.metrics.enabled 含 drop，且 hubble-metrics Service 帶有 prometheus.io/scrape 註記（設定 serviceMonitor 會把該註記關掉）。最下方的原始事件面板仍使用 Loki。",
+      "tags": [
+        "cilium",
+        "networkpolicy",
+        "security",
+        "hubble"
+      ],
+      "timezone": "browser",
+      "editable": false,
+      "schemaVersion": 39,
+      "refresh": "1m",
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "panels": [
+        {
+          "type": "stat",
+          "title": "區間內總丟包數",
+          "description": "時間區間內的封包丟棄總數。用 increase 而非直接取計數器值，因為 cilium agent 重啟會讓計數器歸零。",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(increase(hubble_drop_total{node=~\"$node\", reason=~\"$reason\"}[$__range]))",
+              "editorMode": "code",
+              "instant": false,
+              "range": true
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "noValue": "0"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "stat",
+          "title": "其中政策拒絕",
+          "description": "reason=POLICY_DENIED 的部分，也就是被 NetworkPolicy/CCNP 擋下的流量。這格刻意不套用 $reason 變數，才能在篩選其他原因時仍看得到政策拒絕的基準量。",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(increase(hubble_drop_total{node=~\"$node\", reason=\"POLICY_DENIED\"}[$__range]))",
+              "editorMode": "code",
+              "instant": false,
+              "range": true
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "noValue": "0"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "stat",
+          "title": "受影響的來源 Pod 數",
+          "description": "source 標籤的格式是 namespace/pod。排除 source=\"\" 的 series —— 空值代表來源不是叢集內的 Pod。",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(count by (source) (increase(hubble_drop_total{node=~\"$node\", reason=~\"$reason\", source!=\"\"}[$__range]) > 0))",
+              "editorMode": "code",
+              "instant": false,
+              "range": true
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "noValue": "0"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Hubble 遺失事件數",
+          "description": "非零表示 hubble 的事件緩衝區溢出，上面所有數字都會低估。這格是資料可信度的指標，不是丟包量。",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(increase(hubble_lost_events_total[$__range]))",
+              "editorMode": "code",
+              "instant": false,
+              "range": true
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              },
+              "noValue": "0"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "丟包速率（依原因）",
+          "description": "POLICY_DENIED 是策略攔阻；UNSUPPORTED_L3_PROTOCOL 多半是 ICMPv6 的路由器探詢，屬於正常背景雜訊。",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (reason) (rate(hubble_drop_total{node=~\"$node\", reason=~\"$reason\"}[5m]))",
+              "editorMode": "code",
+              "instant": false,
+              "range": true,
+              "legendFormat": "{{reason}}"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "pps",
+              "decimals": 3,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "noValue": "區間內沒有丟包"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "丟包速率（依節點）",
+          "description": "egress 的丟棄記錄在來源端所在的節點。單一節點突增通常代表該節點上的某個 Pod 行為改變。",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 4,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (node) (rate(hubble_drop_total{node=~\"$node\", reason=~\"$reason\"}[5m]))",
+              "editorMode": "code",
+              "instant": false,
+              "range": true,
+              "legendFormat": "{{node}}"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "pps",
+              "decimals": 3,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false
+              },
+              "noValue": "區間內沒有丟包"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "barchart",
+          "title": "Top 來源 Pod",
+          "description": "topk(10)。source 的格式是 namespace/pod。",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "topk(10, sum by (source) (increase(hubble_drop_total{node=~\"$node\", reason=~\"$reason\", source!=\"\"}[$__range])))",
+              "editorMode": "code",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "options": {
+            "orientation": "horizontal",
+            "showValue": "always",
+            "legend": {
+              "showLegend": false
+            },
+            "xTickLabelRotation": 0
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "noValue": "區間內沒有來自 Pod 的丟包"
+            },
+            "overrides": []
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "renameByName": {
+                  "source": "來源 Pod",
+                  "Value": "丟包數"
+                }
+              }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "sort": [
+                  {
+                    "field": "丟包數",
+                    "desc": true
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "type": "piechart",
+          "title": "依協定",
+          "description": "協定分布。ICMPv6 占比高通常只是背景雜訊，TCP 才值得追查。",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (protocol) (increase(hubble_drop_total{node=~\"$node\", reason=~\"$reason\"}[$__range]))",
+              "editorMode": "code",
+              "instant": false,
+              "range": true,
+              "legendFormat": "{{protocol}}"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "values": [
+                "value",
+                "percent"
+              ]
+            },
+            "pieType": "donut"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "noValue": "區間內沒有丟包"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "table",
+          "title": "來源 → 目的（含原因與協定）",
+          "description": "目的為空白表示目的地不是叢集內的 Pod（叢集外位址、節點 IP 或尚未解析的 Service）。這是 destinationContext=pod 的正常結果，不是設定錯誤。",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 20,
+            "w": 24,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (source, destination, reason, protocol) (increase(hubble_drop_total{node=~\"$node\", reason=~\"$reason\"}[$__range]))",
+              "editorMode": "code",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "footer": {
+              "show": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true
+              },
+              "noValue": "區間內沒有丟包"
+            },
+            "overrides": []
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "indexByName": {
+                  "source": 0,
+                  "destination": 1,
+                  "reason": 2,
+                  "protocol": 3,
+                  "Value": 4
+                },
+                "renameByName": {
+                  "source": "來源",
+                  "destination": "目的",
+                  "reason": "原因",
+                  "protocol": "協定",
+                  "Value": "丟包數"
+                }
+              }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "sort": [
+                  {
+                    "field": "丟包數",
+                    "desc": true
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "type": "logs",
+          "title": "原始事件（Loki）",
+          "description": "Prometheus 只有彙總計數，沒有個別封包的埠號與方向。要追到單一事件仍需 Kubernetes events。注意這裡算的是事件更新次數，與上方的封包數不會一致。",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 29,
+            "w": 24,
+            "h": 11
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "queryType": "range",
+              "expr": "{job=\"integrations/kubernetes/eventhandler\", reason=\"PacketDrop\"} |= `$search`"
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true
+          }
+        }
+      ],
+      "templating": {
+        "list": [
+          {
+            "name": "node",
+            "label": "節點",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "query": {
+              "query": "label_values(hubble_drop_total, node)",
+              "refId": "A"
+            },
+            "refresh": 2,
+            "multi": true,
+            "includeAll": true,
+            "allValue": ".*",
+            "current": {
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            },
+            "description": "只列出目前有 drop 指標的節點。沒有任何丟包的節點不會出現。"
+          },
+          {
+            "name": "reason",
+            "label": "丟棄原因",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "query": {
+              "query": "label_values(hubble_drop_total, reason)",
+              "refId": "A"
+            },
+            "refresh": 2,
+            "multi": true,
+            "includeAll": true,
+            "allValue": ".*",
+            "current": {
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            },
+            "description": "常見值：POLICY_DENIED（策略攔阻）、UNSUPPORTED_L3_PROTOCOL（ICMPv6 雜訊）。"
+          },
+          {
+            "name": "search",
+            "label": "事件關鍵字",
+            "type": "textbox",
+            "query": "",
+            "current": {
+              "text": "",
+              "value": ""
+            },
+            "description": "只影響最下方的 Loki 原始事件面板，例如 Outgoing、8333、world。"
+          }
+        ]
+      }
+    }

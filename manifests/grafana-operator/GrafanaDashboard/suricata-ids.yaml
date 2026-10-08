@@ -1,0 +1,916 @@
+# Suricata IDS 儀表板
+#
+# 網路層的偵測視角，與 Falco（主機行為）、K8s Audit（控制平面）互補。
+#
+# 兩個資料來源刻意並存，對應兩種問題：
+#   Wazuh 索引 (uid: wazuh-alerts)  —— 「判斷之後」。已經過規則層分級、
+#                                      爆發收斂與 MITRE 標註
+#   Loki     (uid: loki)           —— 「判斷之前」。原始 eve.json，
+#                                      用來查「某筆事件為什麼沒變成告警」
+#
+# 相依：
+#   - GrafanaDatasource/wazuh.yaml 與 loki.yaml
+#   - values/wazuh.yaml 的 localDecoder/localRules（規則 100200-100212）
+#   - values/k8s-monitoring.yaml 的 suricata_alerts 管線
+#   - charts/suricata（eve.types 含 alert，且 job/component 標籤如下）
+#
+# 視野限制（看面板前要先知道，否則會把「沒資料」誤判成故障）：
+#   Cilium native routing 下同節點的 Pod 互連不經過 eth0，
+#   Suricata 只看得到跨節點與進出叢集的流量。
+#
+# 判讀上的三個陷阱：
+#   1. 只看到規則 100201（level 3）是正常狀態，代表規則層判斷「沒有
+#      值得通知的事」，不是管線故障。要確認管線活著，看「eve.json
+#      脈絡事件量」那一格。
+#   2. MITRE 面板空白不代表沒有告警。編號必須存在於 Wazuh 內建的
+#      mitre.db（約 2023-05 的快照），查不到的編號會讓整組 mitre 欄位
+#      靜默消失，而告警照常產生。
+#   3. 「告警總數」與「eve.json 脈絡事件量」的差距是刻意的：Loki 收
+#      全量供 Threat Hunting，Wazuh 只收 alert。實測 alert 佔全部
+#      eve 事件的 0.75%。
+#
+# 欄位型別已從索引確認可聚合（都是 keyword，rule.level 是 long）：
+#   data.alert.signature / data.alert.category / data.alert.severity
+#   data.src_ip / data.dest_ip / rule.id / rule.mitre.id / rule.groups
+#
+# editable 設為 false 是刻意的：這份儀表板由 operator 管理，
+# resyncPeriod 到期時會以本檔案的內容覆寫 Grafana 上的版本，
+# 不會有任何警告。設成唯讀才不會讓人在 UI 上白改一場。
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: suricata-ids
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  folderRef: devsecops
+  resyncPeriod: 5m
+  json: |
+    {
+      "uid": "suricata-ids",
+      "title": "Suricata IDS",
+      "description": "網路層偵測。資料來自 Wazuh 的告警索引（已經過規則層分級與爆發收斂）與 Loki 的原始 eve.json。視野限制：Cilium native routing 下同節點的 Pod 互連不經過 eth0，這裡只看得到跨節點與進出叢集的流量。",
+      "tags": [
+        "suricata",
+        "ids",
+        "security",
+        "wazuh",
+        "soc"
+      ],
+      "timezone": "browser",
+      "editable": false,
+      "schemaVersion": 39,
+      "refresh": "1m",
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "minlevel",
+            "label": "最低 Wazuh 等級",
+            "type": "custom",
+            "query": "0,3,8,12,13",
+            "current": {
+              "text": "0",
+              "value": "0"
+            },
+            "options": [],
+            "includeAll": false,
+            "multi": false,
+            "description": "3=進索引的基準 8=中優先級 12=高危／高優先級 13=達通知門檻"
+          },
+          {
+            "name": "sig",
+            "label": "特徵",
+            "type": "query",
+            "datasource": {
+              "type": "elasticsearch",
+              "uid": "wazuh-alerts"
+            },
+            "query": "{\"find\": \"terms\", \"field\": \"data.alert.signature\", \"size\": 100}",
+            "refresh": 2,
+            "includeAll": true,
+            "allValue": "*",
+            "multi": true,
+            "current": {
+              "text": "All",
+              "value": "$__all"
+            },
+            "options": []
+          }
+        ]
+      },
+      "panels": [
+        {
+          "type": "stat",
+          "title": "區間內告警總數",
+          "description": "Wazuh 收到並產生告警的 Suricata 事件數（level >= 3 才會寫入索引）。這是「判斷過的事件」，不是 Suricata 的原始 alert 數 —— 兩者的差距就是規則層收斂掉的量。",
+          "datasource": {
+            "type": "elasticsearch",
+            "uid": "wazuh-alerts"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "elasticsearch",
+                "uid": "wazuh-alerts"
+              },
+              "query": "rule.groups:suricata AND rule.level:>=$minlevel AND data.alert.signature:$sig",
+              "alias": "",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "@timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0",
+                    "trimEdges": "0"
+                  }
+                }
+              ],
+              "timeField": "@timestamp"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "noValue": "0",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "stat",
+          "title": "需通知等級 (>= 13)",
+          "description": "達到通知門檻的告警。level 12 是個別 Critical，只進索引供獵捕；13 以上才是爆發收斂（100210/100211）或單一高價值事件，會經 Grafana 送到 Zulip 與 Mailpit。這格刻意不套用 $minlevel，才能在篩選時仍看得到基準。",
+          "datasource": {
+            "type": "elasticsearch",
+            "uid": "wazuh-alerts"
+          },
+          "gridPos": {
+            "x": 4,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "elasticsearch",
+                "uid": "wazuh-alerts"
+              },
+              "query": "rule.groups:suricata AND rule.level:>=13",
+              "alias": "",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "@timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0",
+                    "trimEdges": "0"
+                  }
+                }
+              ],
+              "timeField": "@timestamp"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "noValue": "0",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "stat",
+          "title": "高危特徵命中",
+          "description": "規則 100202（classtype 屬於提權／木馬／惡意程式／攻擊／C2）與 100203（Suricata 自己宣告 severity 1）。這兩條是 ET Open 真正的偵測價值所在。",
+          "datasource": {
+            "type": "elasticsearch",
+            "uid": "wazuh-alerts"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "elasticsearch",
+                "uid": "wazuh-alerts"
+              },
+              "query": "rule.groups:suricata AND rule.id:(100202 OR 100203)",
+              "alias": "",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "@timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0",
+                    "trimEdges": "0"
+                  }
+                }
+              ],
+              "timeField": "@timestamp"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "noValue": "0",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "stat",
+          "title": "不重複特徵數",
+          "description": "區間內觸發過的不同規則特徵數。用 terms 聚合後數列數而非 cardinality —— cardinality 搭配時間分桶只能取近似值。",
+          "datasource": {
+            "type": "elasticsearch",
+            "uid": "wazuh-alerts"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "elasticsearch",
+                "uid": "wazuh-alerts"
+              },
+              "query": "rule.groups:suricata AND rule.level:>=$minlevel AND data.alert.signature:$sig",
+              "alias": "",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "data.alert.signature",
+                  "settings": {
+                    "size": "500",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  }
+                }
+              ],
+              "timeField": "@timestamp"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "count"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "noValue": "0",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "stat",
+          "title": "不重複來源 IP",
+          "description": "區間內出現過的來源位址數。這個數字搭配下方的來源熱點看：少數 IP 製造大量告警是掃描的形狀，大量 IP 各出現一兩次通常是環境噪音。",
+          "datasource": {
+            "type": "elasticsearch",
+            "uid": "wazuh-alerts"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "elasticsearch",
+                "uid": "wazuh-alerts"
+              },
+              "query": "rule.groups:suricata AND rule.level:>=$minlevel AND data.alert.signature:$sig",
+              "alias": "",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "data.src_ip",
+                  "settings": {
+                    "size": "500",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  }
+                }
+              ],
+              "timeField": "@timestamp"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "count"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "noValue": "0",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "stat",
+          "title": "eve.json 脈絡事件量",
+          "description": "Loki 裡的 Suricata 全量事件（http / dns / tls / ssh / stats）。這格與左邊的「告警總數」是刻意的對照：Loki 收全量供 Threat Hunting，Wazuh 只收需要判斷的 alert。實測 alert 只佔全部事件的 0.75%。不含 flow —— Hubble 已經提供同樣的可視性，那是重複資料。",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "gridPos": {
+            "x": 20,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum(count_over_time({job=\"integrations/suricata\", component=\"eve\"}[$__range]))",
+              "queryType": "instant",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "colorMode": "none",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "noValue": "0"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "告警時序（依 Wazuh 等級）",
+          "description": "分色的是 Wazuh 判定的等級而非 Suricata 的 severity。兩者刻意不同：Suricata 說的是「這條規則有多重要」，Wazuh 說的是「在這個叢集的脈絡下這件事有多重要」—— 包含爆發收斂與抑制之後的結果。",
+          "datasource": {
+            "type": "elasticsearch",
+            "uid": "wazuh-alerts"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 14,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "elasticsearch",
+                "uid": "wazuh-alerts"
+              },
+              "query": "rule.groups:suricata AND rule.level:>=$minlevel AND data.alert.signature:$sig",
+              "alias": "",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "rule.level",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "_term",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "@timestamp",
+                  "settings": {
+                    "interval": "auto",
+                    "min_doc_count": "0",
+                    "trimEdges": "0"
+                  }
+                }
+              ],
+              "timeField": "@timestamp"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "custom": {
+                "drawStyle": "bars",
+                "stacking": {
+                  "mode": "normal"
+                },
+                "fillOpacity": 70,
+                "lineWidth": 0,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "barchart",
+          "title": "Top 特徵",
+          "description": "命中次數最高的 10 條規則特徵。健康的狀態是這裡看到的多半是環境噪音或自家的煙霧測試；若 ET Open 的特徵衝到前段，那才是要查的事。",
+          "datasource": {
+            "type": "elasticsearch",
+            "uid": "wazuh-alerts"
+          },
+          "gridPos": {
+            "x": 14,
+            "y": 4,
+            "w": 10,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "elasticsearch",
+                "uid": "wazuh-alerts"
+              },
+              "query": "rule.groups:suricata AND rule.level:>=$minlevel AND data.alert.signature:$sig",
+              "alias": "",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "data.alert.signature",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  }
+                }
+              ],
+              "timeField": "@timestamp"
+            }
+          ],
+          "options": {
+            "orientation": "horizontal",
+            "xTickLabelRotation": 0,
+            "legend": {
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 0,
+              "custom": {
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "table",
+          "title": "來源 → 目的 熱點",
+          "description": "同一個來源對多個目的、或短時間內大量命中，就是掃描與橫向移動的形狀。這是 Suricata 在這個生態系裡最獨特的價值 —— Falco 看不到這件事，對它而言那只是某個行程開了幾個 socket。對應的告警規則是 100212（同一來源 60 秒內 25 次）。",
+          "datasource": {
+            "type": "elasticsearch",
+            "uid": "wazuh-alerts"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 13,
+            "w": 12,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "elasticsearch",
+                "uid": "wazuh-alerts"
+              },
+              "query": "rule.groups:suricata AND rule.level:>=$minlevel AND data.alert.signature:$sig",
+              "alias": "",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "data.src_ip",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  }
+                },
+                {
+                  "id": "4",
+                  "type": "terms",
+                  "field": "data.dest_ip",
+                  "settings": {
+                    "size": "5",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  }
+                }
+              ],
+              "timeField": "@timestamp"
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "sortBy": [
+              {
+                "displayName": "Count",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "piechart",
+          "title": "MITRE ATT&CK 技術",
+          "description": "由 Wazuh 規則的 <mitre> 標註而來，不是 Suricata 規則自己的 metadata。編號必須存在於 Wazuh 內建的 mitre.db（約 2023-05 的快照）—— 查不到的編號會靜默消失整組欄位，而告警照樣觸發，所以這裡空白不代表沒有告警。",
+          "datasource": {
+            "type": "elasticsearch",
+            "uid": "wazuh-alerts"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 13,
+            "w": 6,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "elasticsearch",
+                "uid": "wazuh-alerts"
+              },
+              "query": "rule.groups:suricata AND rule.level:>=$minlevel AND data.alert.signature:$sig",
+              "alias": "",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "rule.mitre.id",
+                  "settings": {
+                    "size": "10",
+                    "order": "desc",
+                    "orderBy": "_count",
+                    "min_doc_count": "1"
+                  }
+                }
+              ],
+              "timeField": "@timestamp"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "pieType": "donut",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "table",
+          "title": "Wazuh 規則命中分布",
+          "description": "100201 基準（level 3，只進索引）/ 100202、100203 分級 / 100210-100212 爆發收斂。若只看到 100201，代表規則層判斷「沒有值得通知的事」，那是正常狀態而非管線故障。",
+          "datasource": {
+            "type": "elasticsearch",
+            "uid": "wazuh-alerts"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 13,
+            "w": 6,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "elasticsearch",
+                "uid": "wazuh-alerts"
+              },
+              "query": "rule.groups:suricata",
+              "alias": "",
+              "metrics": [
+                {
+                  "id": "1",
+                  "type": "count"
+                }
+              ],
+              "bucketAggs": [
+                {
+                  "id": "3",
+                  "type": "terms",
+                  "field": "rule.id",
+                  "settings": {
+                    "size": "20",
+                    "order": "desc",
+                    "orderBy": "_term",
+                    "min_doc_count": "1"
+                  }
+                }
+              ],
+              "timeField": "@timestamp"
+            }
+          ],
+          "options": {
+            "showHeader": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "logs",
+          "title": "原始 alert（Loki）",
+          "description": "未經 Wazuh 規則層的原始 eve.json alert。上面的面板看的是「判斷之後」，這裡看的是「判斷之前」—— 要確認某筆事件為什麼沒有變成告警時看這裡。",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 22,
+            "w": 24,
+            "h": 10
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "{job=\"integrations/suricata\", component=\"eve\"} |= \"\\\"event_type\\\":\\\"alert\\\"\"",
+              "queryType": "range"
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true,
+            "dedupStrategy": "none"
+          }
+        }
+      ]
+    }

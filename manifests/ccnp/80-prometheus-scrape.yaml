@@ -1,0 +1,67 @@
+---
+# 80 — Prometheus 的抓取連線
+#
+# 監控系統天生需要廣泛的連線權限：它要連「每一個」target 的 metrics 埠。
+# 逐一列舉不可維護（每裝一個元件就要改策略），所以這裡刻意放寬到
+# 「可連叢集內所有 Pod」。
+#
+# 這個取捨要有意識地做 —— Prometheus 因此成為高價值目標：
+# 它能連到的範圍就是攻擊者取得它之後能探測的範圍
+# (對應 ATT&CK 的 Discovery 戰術)。補償措施是縮小「誰能連到 Prometheus」，
+# 而不是縮小「Prometheus 能連到誰」。
+#
+# 已由 10-infra-baseline 涵蓋、這裡不需重複的部分：
+#   - 連 kube-apiserver (kubernetes_sd_configs 的服務發現)
+#   - 接受 Gateway 轉發進來的 Web UI 流量
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-prometheus-scrape
+spec:
+  description: "Allow Prometheus to scrape metrics from all pods"
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: observability
+      k8s:app.kubernetes.io/name: prometheus
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egress:
+    - toEndpoints:
+        - {}
+    # node IP 上的 target 不是 Pod endpoint，toEndpoints 涵蓋不到：
+    # kubelet (10250)、node-exporter (9100)、cilium-agent/envoy (9962-9965)
+    # 都跑在 hostNetwork 上，流量目的地是 node IP。
+    #   host        = Prometheus 自己所在的 node
+    #   remote-node = 叢集裡的其他 node
+    # 兩個都要，少任何一個就會剩下對應的那幾個 node 抓不到。
+    - toEntities:
+        - host
+        - remote-node
+---
+# 目的端：各 namespace 的 Pod 接受 Prometheus 連入。
+#
+# 不限制埠號：metrics 埠每個元件都不同 (9090 / 9100 / 8080 / 9153...)，
+# 列舉等於每裝一個元件就要改這裡。來源已經限定到單一應用，
+# 放寬埠號的風險可控。
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-allow-prometheus-ingress
+spec:
+  description: "Allow all pods to accept scrapes from Prometheus"
+  endpointSelector:
+    matchExpressions:
+      # Exists 不能省：NotIn 式的選擇器若少了它會把沒有 namespace
+      # 標籤的保留 endpoint 一併選中。這裡雖然只有 Exists，
+      # 仍明確寫出以表達「只選真正的 Pod」
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: Exists
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            k8s:app.kubernetes.io/name: prometheus

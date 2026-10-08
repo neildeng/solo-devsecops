@@ -1,0 +1,18 @@
+---
+# k8s-metacollector：k8smeta plugin 的資料來源。
+#
+# 舊的 Helm 部署其實從來沒裝這個元件，於是 k8smeta plugin 一直空轉，
+# 所有事件的 k8s.pod.name / k8s.ns.name 都是 <NA>。chart 會靜默載入
+# 一個無效的 plugin，operator 則直接讓 Falco 啟動失敗：
+#   Runtime error: error in plugin k8smeta init config:
+#   In <root>, Missing required property 'collectorHostname'. Exiting.
+#
+# 也就是說這個缺陷是搬到 operator 才暴露出來的，不是搬遷造成的。
+apiVersion: instance.falcosecurity.dev/v1alpha1
+kind: Component
+metadata:
+  name: metacollector
+  namespace: kube-security
+spec:
+  component:
+    type: metacollector

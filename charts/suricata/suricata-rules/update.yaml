@@ -1,0 +1,11 @@
+# suricata-update 設定：只在建置 image 時使用
+enable-conf: /etc/suricata/enable.conf
+disable-conf: /etc/suricata/disable.conf
+modify-conf: /etc/suricata/modify.conf
+
+# 自訂規則，會合併進輸出的 suricata.rules
+local:
+  - /etc/suricata/rules/local.rules
+
+# 建置階段沒有執行中的 Suricata，不需要 reload
+reload-command: ""

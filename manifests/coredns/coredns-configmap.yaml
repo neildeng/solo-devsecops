@@ -1,0 +1,75 @@
+# CoreDNS：per-service 的 split-horizon DNS 改寫
+#
+# 宿主機的 /etc/hosts 把 *.the-one.k8s 指向 127.0.0.1 或 LAN IP，
+# 那對 Mac 正確，但傳進 Pod 後 127.0.0.1 會變成 Pod 自己。
+#
+# 叢集重建後 Corefile 會回到預設值，要重新套用。
+# 這個 ConfigMap 是 kubeadm 建的，缺 last-applied-configuration 註記，
+# 用 apply 會靜默回報 unchanged —— 必須用 replace：
+#   kubectl replace -f manifests/coredns/coredns-configmap.yaml
+#   kubectl -n kube-system rollout restart deploy/coredns
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        errors
+        health {
+           lameduck 5s
+        }
+        ready
+
+        # split-horizon DNS：叢集內改寫成 Service DNS，流量不繞出叢集也不經 Gateway。
+        #
+        # 不用 wildcard 導向 Gateway 的原因（實測確認）：
+        # Cilium Gateway 代替客戶端執行「客戶端 -> 後端」的策略檢查，
+        # 要放行的是真正的目的地而非 Gateway，所以走 Gateway 省不掉任何
+        # NetworkPolicy，卻多一跳 Envoy 並讓 Gateway 成為內部通訊的故障點。
+        #
+        # 新增服務時在這裡多加一行。
+        rewrite name zulip.the-one.k8s   zulip.zulip.svc.cluster.local
+        rewrite name mailpit.the-one.k8s mailpit.mailpit.svc.cluster.local
+        rewrite name grafana.the-one.k8s grafana-service.observability.svc.cluster.local
+        rewrite name prometheus.the-one.k8s prometheus-server.observability.svc.cluster.local
+        rewrite name wazuh.the-one.k8s wazuh-dashboard.kube-security.svc.cluster.local
+        # 本機的 OCI pull-through mirror（registry/compose.yaml 起的）。
+        #
+        # mirror 容器接在 kind 的 docker network 上，node 內的 containerd
+        # 可以靠 docker DNS 解析 mirror-ghcr-io，但 Pod 不行 —— Pod 問的是
+        # CoreDNS，CoreDNS 不知道 docker network 的名稱。
+        #
+        # falco-operator 的 artifact sidecar 是在 Pod 裡用自己的 OCI client
+        # 拉東西，不經過 containerd，所以 containerd 的 mirror 設定幫不上忙，
+        # 必須讓 Pod 自己解析得到。
+        #
+        # 實測差異（5 MB 的 plugin blob）：
+        #   直連 ghcr.io  148 秒
+        #   mirror 已快取   0.008 秒
+        #
+        # IP 來自 docker inspect mirror-ghcr-io（kind network）。
+        # 重建 registry 後若 IP 變動，只要改這一行。
+        hosts {
+           192.168.247.8 mirror-ghcr-io
+           fallthrough
+        }
+
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+           pods insecure
+           fallthrough in-addr.arpa ip6.arpa
+           ttl 30
+        }
+        prometheus :9153
+        forward . /etc/resolv.conf {
+           max_concurrent 1000
+        }
+        cache 30 {
+           disable success cluster.local
+           disable denial cluster.local
+        }
+        loop
+        reload
+        loadbalance
+    }

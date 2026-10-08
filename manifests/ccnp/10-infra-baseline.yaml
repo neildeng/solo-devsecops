@@ -1,0 +1,62 @@
+---
+# 10 — 全叢集的基礎設施放行
+#
+# 這四件事對每個 Pod 都成立，合併成一條避免散落：
+#   - DNS (含 L7 proxy，toFQDNs 的前提)
+#   - 連往 API Server
+#   - 接受 API Server 連入 (admission / conversion webhook)
+#   - 接受 Gateway 轉發進來的流量
+#
+# 全部設 enableDefaultDeny: false —— 只貢獻允許清單，
+# 不讓這份策略自己把端點推進 default-deny 模式。
+# 這也讓它可以先單獨套用而不會擋掉任何東西。
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-infra-baseline
+spec:
+  description: "Cluster-wide allowances: DNS, API server both ways, Gateway ingress"
+  endpointSelector: {}
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egress:
+    # DNS 走 Cilium 的 DNS proxy。
+    # rules.dns 不只是為了 Hubble 的可見度 —— 它是 toFQDNs 能運作的前提，
+    # 因為 Cilium 要攔截 DNS 回應才學得到網域對應的 IP。
+    #
+    # 警告：若有其他策略對同一段流量做「只到 L4」的 DNS 放行，
+    # Cilium 會取較寬鬆者，DNS 就會繞過 proxy，toFQDNs 永遠失效。
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY   # 同時涵蓋 UDP 與 TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+
+    # 連往 API Server。用 toEntities 而非寫死 ClusterIP：
+    # API Server 不屬於任何 namespace，HA 下還有多個 node IP，
+    # 交給 Cilium 自己維護這組位址。
+    - toEntities:
+        - kube-apiserver
+  ingress:
+    # API Server 主動連入 (webhook 回呼)。
+    # 不限制埠號：各家 webhook 埠不同 (cert-manager 10250、Kyverno 9443...)，
+    # 逐一列舉等於每裝一個元件就要改策略。來源是 Cilium 維護的實體，
+    # 攻擊者無法偽裝，放寬埠號的風險很低。
+    - fromEntities:
+        - kube-apiserver
+
+    # Cilium Gateway / Ingress 轉發給後端。
+    # 這些流量帶的是 reserved:ingress 身分，既不是 Pod 也不是 node，
+    # vanilla NetworkPolicy 表達不出來。
+    #
+    # 敢對全叢集放行的理由：Gateway 只會送到 HTTPRoute 明確指定的後端，
+    # 實際的存取控制在 HTTPRoute 不在這裡。
+    - fromEntities:
+        - ingress

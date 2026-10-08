@@ -1,0 +1,20 @@
+# 機敏資料 —— 各自有 .example 版本可參考
+manifests/credentials.env
+manifests/seaweedfs/s3.config
+
+# step-ca 的 values 含 CA 私鑰，由 bootstrap.md 的步驟在本機產生
+values/step-certificates.yaml
+values/step-issuer.yaml
+
+# 憑證與金鑰
+*.key
+*.pem
+*kubeconfig*.yaml
+
+# 本機產物
+registry/data/
+.local/
+**/venv/
+.DS_Store
+.idea/
+.vscode/

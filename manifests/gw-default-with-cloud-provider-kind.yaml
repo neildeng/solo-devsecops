@@ -1,0 +1,36 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: default-cloud-provider-kind
+  namespace: kube-system
+  annotations:
+    cert-manager.io/issuer-group: certmanager.step.sm
+    cert-manager.io/issuer-kind: StepClusterIssuer
+    cert-manager.io/issuer: step-issuer
+    cert-manager.io/common-name: wildcard.the-one.k8s
+    cert-manager.io/duration: 72h
+    cert-manager.io/renew-before: 48h
+    cert-manager.io/private-key-rotation-policy: Always
+spec:
+  gatewayClassName: cloud-provider-kind
+  listeners:
+    - allowedRoutes:
+        namespaces:
+          from: All
+      hostname: '*.the-one.k8s'
+      name: http-80
+      port: 80
+      protocol: HTTP
+    - allowedRoutes:
+        namespaces:
+          from: All
+      hostname: '*.the-one.k8s'
+      name: https-443
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: wildcard-svc-443-tls

@@ -1,0 +1,37 @@
+Mailpit 已部署到 namespace {{ .Release.Namespace }}。
+
+SMTP 位址（給應用程式設定用）：
+  主機  {{ include "mailpit.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  埠號  {{ .Values.smtp.port }}
+  TLS   不啟用；帳密留空即可
+
+Zulip 的對應設定：
+  SETTING_EMAIL_HOST      {{ include "mailpit.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  SETTING_EMAIL_PORT      "{{ .Values.smtp.port }}"
+  SETTING_EMAIL_USE_TLS   "False"
+  SETTING_EMAIL_HOST_USER ""
+
+{{- if .Values.httpRoute.enabled }}
+
+Web UI：
+{{- range .Values.httpRoute.hostnames }}
+  https://{{ . }}
+{{- end }}
+
+  注意：叢集內的元件若要以這個網域互連，CoreDNS 需要一條 rewrite，
+  否則會解析到宿主機 /etc/hosts 的 127.0.0.1（對 Pod 而言是它自己）。
+{{- else }}
+
+Web UI（未啟用 HTTPRoute，用 port-forward）：
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "mailpit.fullname" . }} {{ .Values.ui.port }}:{{ .Values.ui.port }}
+{{- end }}
+
+{{- if not .Values.persistence.enabled }}
+
+郵件存在記憶體，Pod 重啟就清空。要保留請設 persistence.enabled=true。
+{{- end }}
+
+{{- if .Values.smtp.authAcceptAny }}
+
+⚠ SMTP 接受任何帳密且允許未加密連線，僅適用於開發環境。
+{{- end }}

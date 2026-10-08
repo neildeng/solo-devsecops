@@ -1,0 +1,23 @@
+---
+# DevSecOps 儀表板資料夾
+#
+# 明確設定 uid：文件指出沒有 .spec.uid 時 reconciler 可能接管
+# 同名的既有資料夾，設了才是穩定的參照。
+#
+# 注意刪除這個 CR 之前，要先把手動建立的儀表板與告警搬走 ——
+# operator 會連同資料夾內的內容一起刪除。
+#
+# dashboard 以 .spec.folderRef 指向這裡（值是 metadata.name，
+# 不是 title）；若資料夾由 operator 以外的方式建立，
+# 則要改用 .spec.folderUID。
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaFolder
+metadata:
+  name: devsecops
+  namespace: observability
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  uid: devsecops
+  title: DevSecOps

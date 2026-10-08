@@ -1,0 +1,30 @@
+---
+# k8saudit 的 webhook 端點。
+#
+# operator 的 Falco CR 沒有 service 欄位，這支要自己維護。
+# 三個地方的埠號必須一致，任一不符都會靜默收不到稽核事件：
+#   kind/audit-webhook.yaml      http://127.0.0.1:30007/k8s-audit
+#   本檔 nodePort                30007
+#   10-plugins.yaml openParams   http://:9765/k8s-audit  → targetPort
+#
+# externalTrafficPolicy: Local 只轉給本節點的 Pod。API server 與 Falco
+# 同節點，這同時避開了跨節點被 NetworkPolicy 擋掉的問題。
+#
+# selector 要對上 operator 實際給 Pod 的標籤，不是沿用 Helm chart 的。
+apiVersion: v1
+kind: Service
+metadata:
+  name: falco-k8saudit-webhook
+  namespace: kube-security
+spec:
+  type: NodePort
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: falco
+    app.kubernetes.io/instance: falco
+  ports:
+    - name: webhook
+      port: 9765
+      targetPort: 9765
+      nodePort: 30007
+      protocol: TCP

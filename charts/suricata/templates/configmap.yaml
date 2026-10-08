@@ -1,0 +1,62 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "suricata.fullname" . }}-config
+data:
+  suricata.yaml: |
+    %YAML 1.1
+    ---
+
+    vars:
+      address-groups:
+        HOME_NET: "[{{ join "," .Values.suricata.homeNet }}]"
+        EXTERNAL_NET: "{{ .Values.suricata.externalNet }}"
+        {{- range $name, $value := .Values.suricata.addressGroups }}
+        {{ $name }}: {{ $value | quote }}
+        {{- end }}
+      port-groups:
+        {{- range $name, $value := .Values.suricata.portGroups }}
+        {{ $name }}: {{ $value | quote }}
+        {{- end }}
+    default-rule-path: /var/lib/suricata/rules
+    rule-files:
+      - suricata.rules
+    classification-file: /etc/suricata/classification.config
+    reference-config: /etc/suricata/reference.config
+    default-log-dir: /var/log/suricata
+    outputs:
+      - fast:
+          enabled: yes
+          filename: fast.log
+          append: yes
+      - eve-log:
+          enabled: yes
+          filetype: regular
+          filename: eve.json
+          community-id: true
+          types:
+            {{- toYaml .Values.suricata.eve.types | nindent 12 }}
+    af-packet:
+      - interface: {{ .Values.suricata.interface }}
+        cluster-id: {{ .Values.suricata.afPacket.clusterId }}
+        cluster-type: {{ .Values.suricata.afPacket.clusterType }}
+        defrag: {{ .Values.suricata.afPacket.defrag }}
+        use-mmap: {{ .Values.suricata.afPacket.useMmap }}
+        tpacket-v3: {{ .Values.suricata.afPacket.tpacketV3 }}
+    stats:
+      enabled: yes
+      interval: 8
+{{- if .Values.logs.rotate.enabled }}
+  # image 內建的 /etc/logrotate.d/suricata 是 daily + rotate 3，
+  # 以實測的 1.2 GB/天/node 換算是每節點 4.8 GB。改以大小為準。
+  logrotate.conf: |
+    {{ .Values.logs.hostPath }}/*.log {{ .Values.logs.hostPath }}/*.json {
+        size {{ .Values.logs.rotate.size }}
+        rotate {{ .Values.logs.rotate.keep }}
+        missingok
+        notifempty
+        nocompress
+        copytruncate
+    }
+{{- end }}

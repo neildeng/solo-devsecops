@@ -1,0 +1,89 @@
+---
+# kind 叢集設定
+#
+# 執行位置很重要：extraMounts 的 hostPath 是相對路徑，kind 以**當前工作目錄**
+# 解析，所以一律從 repo 根目錄執行：
+#
+#   kind create cluster --config kind/config.yaml
+#
+# 三個 worker 不是為了算力，是為了讓流量跨節點。Cilium native routing 下
+# 同節點的 Pod 互連不經過 eth0，Suricata 看不到 —— 單節點叢集測 IDS 規則
+# 會得到「規則沒問題但一筆都沒觸發」的假象。詳見文章第 6 篇。
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: the-one
+
+networking:
+  # 由 Cilium 接手。CCNP、Hubble、Gateway API 都是 kindnet 沒有的能力
+  disableDefaultCNI: true
+  kubeProxyMode: none
+
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.35.5@sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            # 稽核日誌：落地一份給 Alloy 讀，同時以 webhook 即時送給 Falco。
+            # 政策內容見 kind/audit-policy.yaml，文章第 5 篇有完整說明。
+            audit-log-path: /var/log/kubernetes/kube-apiserver-audit.log
+            audit-policy-file: /etc/kubernetes/policies/audit-policy.yaml
+            audit-log-maxage: "2"
+            audit-log-maxbackup: "3"
+            audit-log-maxsize: "50"
+            audit-webhook-config-file: /etc/kubernetes/policies/audit-webhook.yaml
+            audit-webhook-batch-max-wait: 5s
+          extraVolumes:
+            - name: audit-policies
+              hostPath: /etc/kubernetes/policies
+              mountPath: /etc/kubernetes/policies
+              readOnly: true
+              pathType: "DirectoryOrCreate"
+            - name: "audit-logs"
+              hostPath: "/var/log/kubernetes"
+              mountPath: "/var/log/kubernetes"
+              readOnly: false
+              pathType: DirectoryOrCreate
+    extraMounts:
+      - hostPath: ./kind/audit-webhook.yaml
+        containerPath: /etc/kubernetes/policies/audit-webhook.yaml
+        readOnly: true
+      - hostPath: ./kind/audit-policy.yaml
+        containerPath: /etc/kubernetes/policies/audit-policy.yaml
+        readOnly: true
+      # 稽核日誌落到主機上，方便在叢集外直接查看。.local/ 已列入 .gitignore
+      - hostPath: ./.local/var/log/kubernetes
+        containerPath: /var/log/kubernetes
+      - hostPath: ./.local/var/local-path-provisioner
+        containerPath: /var/local-path-provisioner
+    extraPortMappings:
+      # Gateway 的 HTTP / HTTPS。audit webhook 的 NodePort 30007 不必映射 ——
+      # API Server 與 Falco 在同一個節點上，走節點自己的 127.0.0.1
+      - containerPort: 80
+        hostPort: 80
+        listenAddress: "0.0.0.0"
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        listenAddress: "0.0.0.0"
+        protocol: TCP
+
+  - role: worker
+    image: kindest/node:v1.35.5@sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95
+    extraMounts:
+      - hostPath: ./.local/var/local-path-provisioner
+        containerPath: /var/local-path-provisioner
+
+  - role: worker
+    image: kindest/node:v1.35.5@sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95
+    extraMounts:
+      - hostPath: ./.local/var/local-path-provisioner
+        containerPath: /var/local-path-provisioner
+
+  - role: worker
+    image: kindest/node:v1.35.5@sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95
+    extraMounts:
+      - hostPath: ./.local/var/local-path-provisioner
+        containerPath: /var/local-path-provisioner

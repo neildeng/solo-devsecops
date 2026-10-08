@@ -1,0 +1,7 @@
+# suricata-update 要啟用的規則來源，一行一個 (名稱見 `suricata-update list-sources --free`)
+# 先只開 ET Open 觀察 alert 量，穩定後再逐一加入其他來源
+et/open
+# abuse.ch/sslbl-ja3
+# abuse.ch/feodotracker
+# abuse.ch/urlhaus
+# aleksibovellan/nmap

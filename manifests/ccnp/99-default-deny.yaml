@@ -1,0 +1,43 @@
+---
+# 01 — 全叢集 default deny
+#
+# endpointSelector 空的話會選中「所有」endpoint，包含 kube-system 裡的
+# CoreDNS、Cilium 自己、API Server proxy —— 那會讓叢集當場癱瘓。
+# 所以一定要把系統與安全元件的 namespace 排除在外。
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: ccnp-default-deny
+spec:
+  description: "Deny all ingress and egress except system namespaces"
+  endpointSelector:
+    matchExpressions:
+      # 這條不能省。Kubernetes 的 NotIn 在「標籤不存在」時也成立，
+      # 所以少了 Exists 的話，Cilium 的保留 endpoint 會一起被選中：
+      #   reserved:health  -> 節點間健康檢查被擋
+      #   reserved:ingress -> Ingress / Gateway 流量被擋
+      #   reserved:init    -> Pod 初始化期間網路被擋（偶發啟動失敗，極難查）
+      # 它們都沒有 namespace 標籤，不該被 default-deny 管。
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: Exists
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: NotIn
+        values:
+          - kube-system
+          - kube-public
+          - kube-node-lease
+          - cilium-secrets
+          - local-path-storage
+  # 兩個方向都給空的允許清單 = 全拒。
+  # 與 NetworkPolicy 同樣的手法：default-deny 是靠「沒有任何 allow」達成的。
+  #
+  #
+  # enableDefaultDeny 顯式寫出來，不依賴「空 rule」的隱含語意 ——
+  # 有人整理 YAML 時刪掉 `- {}`，整條策略會靜默失效。
+  enableDefaultDeny:
+    ingress: true
+    egress: true
+  ingress:
+    - {}
+  egress:
+    - {}

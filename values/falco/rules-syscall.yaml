@@ -1,0 +1,596 @@
+# KOAD Falco Rules — syscall source
+#
+# 涵蓋 KOAD 靶場 S01–S35 中「可由 syscall 觀測」的場景。
+# 需要 k8s audit log 的場景另見 rules-k8saudit.yaml。
+#
+# 來源：koad-test/defense/falco/custom-rules.yaml，並補齊原檔未涵蓋的場景
+#      (補齊項目在規則上方以「補齊」標示)。
+# 掛載方式：Falco Helm values 的 customRules，或 /etc/falco/rules.d/。
+
+####################################################################
+# 共用 list / macro
+####################################################################
+
+- list: koad_shell_binaries
+  items: [bash, sh, ash, zsh, dash, ksh]
+
+- list: koad_container_runtimes
+  items: [runc, containerd-shim, containerd-shim-runc-v2, dockerd, crio]
+
+- list: koad_kernel_exploit_binaries
+  items: [dirty_pipe, dirtypipe, exploit, cve_exploit, cve_2022_0847, dirtycow, pwnkit]
+
+- list: koad_bruteforce_tools
+  items: [hydra, medusa, ncrack, patator, crowbar]
+
+- list: koad_scanning_tools
+  items: [nmap, masscan, zmap, naabu, rustscan]
+
+- list: koad_miner_binaries
+  items: [xmrig, minerd, minergate, cpuminer, ethminer]
+
+- list: koad_stress_binaries
+  items: [stress, stress-ng, cpuburn, yes]
+
+- list: koad_dos_tools
+  items: [hping3, iperf3, slowhttptest, ab, siege]
+
+# fd.sip 是 IPv4 欄位，只能放 IP 字面值。
+# 不要放 metadata.google.internal 這類主機名稱 —— 除了會編譯失敗，
+# 邏輯上也沒意義：connect() 時 DNS 已經解析完，核心看到的只有 IP。
+# 雲端 metadata 服務不分廠商都是這個 link-local 位址。
+- list: koad_metadata_endpoints
+  items: ["169.254.169.254"]
+
+- list: koad_image_tools
+  items: [docker, podman, buildah, skopeo, crane, nerdctl, ctr]
+
+# kubectl 類的 CLI（含 bitnami/kubectl 映像常見路徑）
+- list: koad_k8s_clients
+  items: [kubectl, oc, kubeadm]
+
+# 偵測工具自己就是最符合多數規則的「可疑容器」：
+# Falco 掛載宿主機根目錄讀 /host/etc/passwd 解析使用者名稱，
+# 不排除的話 S06 會每秒噴數十筆 CRITICAL。
+- list: koad_security_tooling
+  items: [falco, falcoctl, falcosidekick]
+
+- macro: koad_in_container
+  condition: container.id != host
+
+- macro: koad_not_security_tooling
+  condition: not proc.name in (koad_security_tooling)
+
+# 基礎設施本來就需要特權執行，不排除的話 S13 會對它們的每一次 exec 告警。
+# 必須用 container.name 而非 proc.name：容器內跑的是 ls / grep / sh，
+# 比對行程名稱完全擋不掉 —— 這是 S06 與 S13 的差別所在。
+#
+# 清單依叢集實際情況調整，查法：
+#   kubectl get pods -A -o json | jq -r '.items[].spec.containers[]?
+#     | select(.securityContext.privileged == true) | .name' | sort -u
+- list: koad_privileged_infra_containers
+  items: [falco, cilium-agent, cilium-operator, cilium-envoy, kube-proxy, local-path-provisioner, wazuh-agent]
+
+- macro: koad_not_privileged_infra
+  condition: not container.name in (koad_privileged_infra_containers)
+
+# Kubernetes 的 exec 探針每次都會 spawn 一個 shell，頻率極高且完全良性。
+# 實測 Zulip 的技術棧（postgresql / redis / rabbitmq）就讓
+# KOAD S04 佔了全部 Falco 事件的 87%，每分鐘約 300 則灌進告警頻道。
+#
+# 用指令內容而非 parent 來排除：探針由 CRI 喚起，proc.pname 多半是空的
+# 或 runtime shim，不是可靠的判別依據。
+#
+# 排除範圍刻意窄 —— 只比對這些特定字串。攻擊者開一個互動 shell
+# 不會長得像 pg_isready。新增元件若有自己的探針腳本，在這裡補字串。
+- macro: koad_is_health_probe
+  condition: >
+    proc.cmdline contains "pg_isready" or
+    proc.cmdline contains "ping_liveness" or
+    proc.cmdline contains "ping_readiness" or
+    proc.cmdline contains "rabbitmq-diagnostics" or
+    proc.cmdline contains "/health/" or
+    proc.cmdline contains "healthcheck.sh"
+
+- macro: koad_not_health_probe
+  condition: not koad_is_health_probe
+
+# 排除 kubelet 等系統元件自身的行為，降低誤報
+- macro: koad_not_k8s_infra
+  condition: not proc.name in (kubelet, kube-proxy, kube-apiserver, etcd)
+
+####################################################################
+# TA0001 Initial Access
+####################################################################
+
+- rule: KOAD S01 SSRF Outbound Request to Metadata
+  desc: 偵測容器對雲端 metadata endpoint 的連線，對應 SSRF 取得 IAM 憑證
+  condition: >
+    evt.type in (connect) and
+    koad_in_container and
+    fd.sip in (koad_metadata_endpoints)
+  output: >
+    SSRF to metadata API detected
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     dest=%fd.sip:%fd.sport command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1190, initial-access]
+
+- rule: KOAD S02 Kubelet API Access
+  desc: 偵測容器直接連向 kubelet 的 10250/10255 連接埠
+  condition: >
+    evt.type in (connect) and
+    koad_in_container and
+    fd.sport in (10250, 10255)
+  output: >
+    Direct kubelet API access detected
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     dest=%fd.sip:%fd.sport command=%proc.cmdline)
+  priority: WARNING
+  tags: [KOAD, T1133, initial-access]
+
+# 補齊：原 custom-rules.yaml 無 S03
+- rule: KOAD S03 Kubeconfig File Read
+  desc: 偵測容器內讀取 kubeconfig，對應憑證洩漏後的接管
+  condition: >
+    open_read and
+    koad_in_container and
+    koad_not_k8s_infra and
+    (fd.name endswith "/.kube/config" or
+     fd.name contains "kubeconfig" or
+     fd.name contains "/admin.conf")
+  output: >
+    Kubeconfig read inside container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     file=%fd.name command=%proc.cmdline user=%user.name)
+  priority: WARNING
+  tags: [KOAD, T1078, initial-access]
+
+####################################################################
+# TA0002 Execution
+####################################################################
+
+- rule: KOAD S04 Shell in Container
+  desc: 偵測容器內被喚起的互動式 shell
+  condition: >
+    spawned_process and
+    koad_in_container and
+    proc.name in (koad_shell_binaries) and
+    not proc.pname in (koad_shell_binaries) and
+    not proc.pname in (koad_container_runtimes) and
+    koad_not_health_probe
+  output: >
+    Shell spawned in container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     user=%user.name command=%proc.cmdline parent=%proc.pname)
+  priority: WARNING
+  tags: [KOAD, T1059, execution]
+
+- rule: KOAD S05 kubectl Execution in Container
+  desc: 偵測容器內執行 kubectl，對應以 SA token 控制叢集
+  condition: >
+    spawned_process and
+    koad_in_container and
+    proc.name in (koad_k8s_clients)
+  output: >
+    kubectl executed inside container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline user=%user.name)
+  priority: CRITICAL
+  tags: [KOAD, T1609, execution]
+
+# 補齊：S06 的 syscall 面（建立 Pod 的審計面見 rules-k8saudit.yaml）
+- rule: KOAD S06 Host Root Filesystem Access
+  desc: 偵測容器存取被掛載進來的宿主機根目錄（/host/etc、/host/root 等）
+  condition: >
+    (open_read or open_write) and
+    koad_in_container and
+    koad_not_security_tooling and
+    (fd.name startswith "/host/etc/" or
+     fd.name startswith "/host/root/" or
+     fd.name startswith "/host/var/run/")
+  output: >
+    Host filesystem access from container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     file=%fd.name command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1610, execution]
+
+# 補齊：S08 釣魚引導執行的典型手法 — 下載後直接丟進 shell
+- rule: KOAD S08 Remote Payload Piped To Shell
+  desc: 偵測 curl/wget 下載內容直接管線給 shell 執行
+  condition: >
+    spawned_process and
+    koad_in_container and
+    proc.name in (koad_shell_binaries) and
+    (proc.cmdline contains "curl" or proc.cmdline contains "wget") and
+    (proc.cmdline contains "| sh" or proc.cmdline contains "|sh" or
+     proc.cmdline contains "| bash" or proc.cmdline contains "|bash")
+  output: >
+    Remote payload piped to shell
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1204, execution]
+
+####################################################################
+# TA0003 Persistence
+####################################################################
+
+- rule: KOAD S11 Sidecar Container Detected
+  desc: 偵測名稱疑似 agent 的 sidecar 容器執行網路工具
+  condition: >
+    spawned_process and
+    koad_in_container and
+    k8s.pod.name != "" and
+    proc.name in (sh, bash, curl, wget) and
+    container.name contains "agent"
+  output: >
+    Suspicious sidecar container activity
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: WARNING
+  tags: [KOAD, T1543, persistence]
+
+# 補齊：S12 植入後門映像 — 容器內推送映像
+- rule: KOAD S12 Image Push From Container
+  desc: 偵測容器內以 docker/skopeo/crane 推送映像到 registry
+  condition: >
+    spawned_process and
+    koad_in_container and
+    proc.name in (koad_image_tools) and
+    (proc.cmdline contains "push" or proc.cmdline contains "copy")
+  output: >
+    Image push from container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1525, persistence]
+
+####################################################################
+# TA0004 Privilege Escalation（逃逸）
+####################################################################
+
+- rule: KOAD S13 Privileged Container Started
+  desc: 偵測特權容器內的行程執行
+  condition: >
+    container and
+    container.privileged = true and
+    evt.type = execve and
+    koad_not_privileged_infra
+  output: >
+    Process in privileged container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline image=%container.image.repository)
+  priority: CRITICAL
+  tags: [KOAD, T1611, privilege-escalation]
+
+- rule: KOAD Mount in Container
+  desc: 偵測容器內的 mount/umount，特權容器掛載宿主機磁碟的直接訊號 (Day 8)
+  condition: >
+    evt.type in (mount, umount2) and
+    koad_in_container and
+    not k8s.ns.name in (kube-system, calico-system, kube-flannel) and
+    not proc.name startswith "runc"
+  output: >
+    Mount operation in container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1611, privilege-escalation]
+
+- rule: KOAD S14 Cgroup Manipulation
+  desc: 偵測透過 cgroup release_agent 的逃逸手法
+  condition: >
+    open_write and
+    koad_in_container and
+    (fd.name contains "release_agent" or fd.name contains "notify_on_release")
+  output: >
+    Cgroup release_agent manipulation detected
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     file=%fd.name command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1611, privilege-escalation]
+
+- rule: KOAD S15 Docker Socket Access
+  desc: 偵測容器存取 Docker socket（DinD 逃逸）
+  condition: >
+    evt.type in (open, openat, connect) and
+    koad_in_container and
+    (fd.name = "/var/run/docker.sock" or
+     fd.name = "/run/containerd/containerd.sock" or
+     fd.name contains "crio.sock")
+  output: >
+    Container runtime socket access from container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     socket=%fd.name command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1611, privilege-escalation]
+
+- rule: KOAD S16 Core Pattern Modified
+  desc: 偵測竄改 /proc/sys/kernel/core_pattern 進行逃逸
+  condition: >
+    open_write and
+    koad_in_container and
+    fd.name = "/proc/sys/kernel/core_pattern"
+  output: >
+    core_pattern modified from container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1611, privilege-escalation]
+
+- rule: KOAD Kernel Modprobe Path Modified
+  desc: 偵測竄改 /proc/sys/kernel/modprobe，與 core_pattern 同類的逃逸手法 (Day 10)
+  condition: >
+    open_write and
+    koad_in_container and
+    fd.name = "/proc/sys/kernel/modprobe"
+  output: >
+    Kernel modprobe path modified
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1611, privilege-escalation]
+
+- rule: KOAD S17 Ptrace in Container
+  desc: 偵測容器內使用 ptrace（hostPID + SYS_PTRACE 注入）
+  condition: >
+    evt.type = ptrace and
+    koad_in_container
+  output: >
+    ptrace detected in container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline target=%evt.arg.addr)
+  priority: CRITICAL
+  tags: [KOAD, T1611, privilege-escalation]
+
+- rule: KOAD Nsenter in Container
+  desc: 偵測容器內執行 nsenter，hostPID 環境下切進宿主機 namespace (Day 11)
+  condition: >
+    spawned_process and
+    koad_in_container and
+    proc.name = nsenter
+  output: >
+    nsenter executed in container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1611, privilege-escalation]
+
+- rule: KOAD S18 Device Node Created
+  desc: 偵測容器內 mknod 建立裝置節點（lxcfs / mount device 逃逸）
+  condition: >
+    evt.type = mknod and
+    koad_in_container
+  output: >
+    Device node created in container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     file=%evt.arg.path command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1611, privilege-escalation]
+
+- rule: KOAD S19 Kernel Exploit Attempt
+  desc: 偵測已知 kernel exploit 執行檔
+  condition: >
+    spawned_process and
+    koad_in_container and
+    (proc.name in (koad_kernel_exploit_binaries) or
+     (proc.cmdline contains "splice" and proc.cmdline contains "/etc/passwd"))
+  output: >
+    Potential kernel exploit execution
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline user=%user.name)
+  priority: CRITICAL
+  tags: [KOAD, T1068, privilege-escalation]
+
+####################################################################
+# TA0005 Defense Evasion（Stealth）
+####################################################################
+
+- rule: KOAD S20 Docker Build in Container
+  desc: 偵測容器內執行 docker build（在宿主機上建構映像以規避掃描）
+  condition: >
+    spawned_process and
+    koad_in_container and
+    proc.name in (koad_image_tools) and
+    proc.cmdline contains "build"
+  output: >
+    Image build from container
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1612, defense-evasion]
+
+- rule: KOAD S21 History File Deletion
+  desc: 偵測刪除或清空 shell history（痕跡清除）
+  condition: >
+    (evt.type in (unlink, unlinkat) or open_write) and
+    koad_in_container and
+    (fd.name pmatch (/root/.bash_history, /root/.ash_history,
+                     /home/*/.bash_history, /home/*/.ash_history) or
+     fd.name contains ".zsh_history")
+  output: >
+    History file tampered
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     file=%fd.name command=%proc.cmdline)
+  priority: WARNING
+  tags: [KOAD, T1070, defense-evasion]
+
+####################################################################
+# TA0006 Credential Access
+####################################################################
+
+- rule: KOAD S24 Brute Force Attempt
+  desc: 偵測密碼噴灑 / 暴力破解工具
+  condition: >
+    spawned_process and
+    koad_in_container and
+    proc.name in (koad_bruteforce_tools)
+  output: >
+    Brute force tool detected
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline user=%user.name)
+  priority: WARNING
+  tags: [KOAD, T1110, credential-access]
+
+- rule: KOAD S25 Environment Variable Dump
+  desc: 偵測讀取 /proc/*/environ 或傾印環境變數竊取憑證
+  condition: >
+    spawned_process and
+    koad_in_container and
+    (proc.cmdline contains "/proc/" and proc.cmdline contains "/environ")
+  output: >
+    Environment dump detected
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: WARNING
+  tags: [KOAD, T1552, credential-access]
+
+- rule: KOAD S26 SA Token Read
+  desc: 偵測讀取 ServiceAccount token 檔案
+  condition: >
+    open_read and
+    koad_in_container and
+    koad_not_k8s_infra and
+    fd.name = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+  output: >
+    SA token read
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline user=%user.name)
+  priority: NOTICE
+  tags: [KOAD, T1552, credential-access]
+
+####################################################################
+# TA0007 Discovery
+####################################################################
+
+# 補齊：S27 叢集資源盤點
+- rule: KOAD S27 Cluster Resource Discovery
+  desc: 偵測容器內跨 namespace 盤點叢集資源
+  condition: >
+    spawned_process and
+    koad_in_container and
+    proc.name in (koad_k8s_clients) and
+    (proc.cmdline contains "--all-namespaces" or proc.cmdline contains " -A ") and
+    (proc.cmdline contains " get " or proc.cmdline contains " describe ")
+  output: >
+    Cluster-wide resource discovery
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: WARNING
+  tags: [KOAD, T1613, discovery]
+
+- rule: KOAD S28 Network Scanning
+  desc: 偵測 nmap 等網路掃描工具
+  condition: >
+    spawned_process and
+    koad_in_container and
+    proc.name in (koad_scanning_tools)
+  output: >
+    Network scan tool detected
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: WARNING
+  tags: [KOAD, T1046, discovery]
+
+# 補齊：S29 RBAC 枚舉
+- rule: KOAD S29 RBAC Enumeration
+  desc: 偵測容器內枚舉 RBAC 權限（can-i / clusterrolebindings）
+  condition: >
+    spawned_process and
+    koad_in_container and
+    proc.name in (koad_k8s_clients) and
+    (proc.cmdline contains "can-i" or
+     proc.cmdline contains "clusterrolebinding" or
+     proc.cmdline contains "clusterrole")
+  output: >
+    RBAC enumeration detected
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: WARNING
+  tags: [KOAD, T1069, discovery]
+
+####################################################################
+# TA0040 Impact
+####################################################################
+
+# 補齊：S31 資料破壞的 syscall 面
+- rule: KOAD S31 Mass Data Deletion In Volume
+  desc: 偵測容器內對掛載資料目錄執行遞迴刪除
+  condition: >
+    spawned_process and
+    koad_in_container and
+    proc.name = rm and
+    (proc.cmdline contains "-rf" or proc.cmdline contains "-fr") and
+    (proc.cmdline contains "/data" or proc.cmdline contains "/var/lib" or
+     proc.cmdline contains "/mnt")
+  output: >
+    Recursive deletion in mounted data path
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: CRITICAL
+  tags: [KOAD, T1485, impact]
+
+- rule: KOAD S32 Resource Intensive Container
+  desc: 偵測壓力測試工具造成資源耗盡
+  condition: >
+    spawned_process and
+    koad_in_container and
+    (proc.name in (koad_stress_binaries) or proc.cmdline contains "stress-ng")
+  output: >
+    Resource-intensive process detected
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: WARNING
+  tags: [KOAD, T1499, impact]
+
+# 補齊：S34 網路 DoS
+- rule: KOAD S34 Network Flood Tool
+  desc: 偵測容器內的網路壓測 / 洪泛工具
+  condition: >
+    spawned_process and
+    koad_in_container and
+    (proc.name in (koad_dos_tools) or
+     (proc.name = ping and proc.cmdline contains " -f"))
+  output: >
+    Network flood tool detected
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline)
+  priority: WARNING
+  tags: [KOAD, T1498, impact]
+
+- rule: KOAD S35 Cryptominer Process
+  desc: 偵測已知挖礦程式或 stratum 協定連線
+  condition: >
+    spawned_process and
+    koad_in_container and
+    (proc.name in (koad_miner_binaries) or
+     proc.cmdline contains "stratum+" or
+     proc.cmdline contains "pool.minergate" or
+     proc.cmdline contains "xmrpool")
+  output: >
+    Cryptominer detected
+    (container=%container.name pod=%k8s.pod.name ns=%k8s.ns.name
+     command=%proc.cmdline image=%container.image.repository)
+  priority: CRITICAL
+  tags: [KOAD, T1496, impact]
+
+####################################################################
+# 自我保護 — Falco 本身被攻擊 (Day 15)
+####################################################################
+
+# 這裡原本有一條 "KOAD Falco Process Terminated"，已移除。原因值得記錄：
+#
+# 1. kill 事件的 proc.name 是「發送訊號的行程」，不是「被殺的行程」。
+#    寫 proc.name = falco 抓到的是「Falco 對別人送訊號」，語意完全相反。
+# 2. Falco 沒有提供 kill 目標行程名稱的欄位，所以「Falco 被殺」
+#    在 syscall 層根本表達不出來。
+# 3. 沒限制訊號種類時，Go runtime 做 goroutine 搶佔用的 SIGURG
+#    會讓這條規則每秒觸發數次。
+#
+# 真正可行的替代方案（都已實作）：
+#   - rules-k8saudit.yaml 的 KOAD S23 / S23b / Security Namespace Modified
+#     從 API 層偵測 DaemonSet 與 ClusterPolicy 被刪
+#   - 把告警送出叢集外（Falcosidekick -> Loki / Zulip），
+#     留在叢集裡的告警會跟著 Falco 一起被刪掉

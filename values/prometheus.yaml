@@ -1,0 +1,32 @@
+---
+server:
+  extraFlags:
+    - web.enable-lifecycle
+    - storage.tsdb.no-lockfile
+    - storage.tsdb.wal-compression
+  route:
+    main:
+      enabled: true
+      parentRefs:
+        - namespace: kube-system
+          name: default
+      hostnames:
+        - prometheus.the-one.k8s
+  # PV 要大於 retentionSize，否則磁碟會在 retentionSize 生效前就滿 ——
+  # Prometheus 不會優雅淘汰舊資料，而是寫入失敗。
+  # 留 1.5 倍給 WAL 與 head block。chart 預設只有 8Gi。
+  persistentVolume:
+    enabled: true
+    size: 20Gi
+
+  retention: "5d"
+  retentionSize: "10GB"
+
+alertmanager:
+  enabled: false
+kube-state-metrics:
+  enabled: true
+prometheus-node-exporter:
+  enabled: true
+prometheus-pushgateway:
+  enabled: false

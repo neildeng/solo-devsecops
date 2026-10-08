@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Config
+clusters:
+  - name: falco
+    cluster:
+      # 必須用節點的 loopback：API Server 與 NodePort 都在同一台節點上。
+      # 不要用主機名稱或 Mac 的 LAN IP —— kind 只有 extraPortMappings
+      # 列出的埠才會映射到 Mac，30007 不在其中。
+      server: http://127.0.0.1:30007/k8s-audit
+contexts:
+  - name: default-context
+    context:
+      cluster: falco
+      user: ""
+current-context: default-context
+users: []
+preferences: {}

@@ -1,0 +1,73 @@
+---
+# falcosidekick（獨立安裝）
+#
+# 改用 falco-operator 之後，falcosidekick 不再是 falco chart 的子 chart，
+# 必須獨立安裝。設定內容與原本 values/falco.yaml 的 falcosidekick 區段
+# 加上 values/falco-zulip.yaml 完全相同，只是少了一層 falcosidekick: 前綴。
+#
+# 沒有改用 Component CR 的原因：Component 只給 podTemplateSpec，
+# falcosidekick 的輸出設定得靠環境變數一條條塞，而且 falcosidekick-ui
+# 在 operator 下需要自備外部 Redis。獨立 chart 能原封不動保留這份設定。
+#
+# Falco 端要在 Config CR 設 http_output 指向這支 Service，
+# 那一段由 chart 自動串接的事情，operator 不會做。
+webui:
+  enabled: true
+  redis:
+    storageEnabled: false
+  httproute:
+    enabled: true
+    parentRefs:
+    - namespace: kube-system
+      name: default
+    hostnames:
+    - falco.the-one.k8s
+    - falcosidekick.the-one.k8s
+config:
+  loki:
+    hostport: ''
+    minimumpriority: notice
+  smtp:
+    hostport: mailpit.mailpit.svc.cluster.local:1025
+    tls: false
+    authmechanism: ''
+    from: falco@the-one.local
+    to: soc@the-one.local
+    outputformat: html
+    # 同上，改由 Wazuh → Grafana 這條送。
+    # emergency 是 Falco 的最高等級，KOAD 規則沒有用到，等於停用。
+    minimumpriority: emergency
+  extraEnv:
+  - name: SLACK_WEBHOOKURL
+    valueFrom:
+      secretKeyRef:
+        name: falco-zulip-webhook
+        key: SLACK_WEBHOOKURL
+  slack:
+    webhookurl: ''
+    # 只送 CRITICAL 以上。
+    #
+    # 原本是 notice，實測每分鐘約 300 則灌進 SOC 頻道，其中 87% 是
+    # KOAD S04 Shell in Container —— 來源是 Zulip 自己的 postgresql /
+    # redis / rabbitmq 健康探針。部署 Zulip 製造的洪水灌進 Zulip。
+    #
+    # 規則層面的噪音已在 values/falco/rules-syscall.yaml 收斂，這裡
+    # 再加一道：聊天室是「要人看的」通道，Warning 級的高頻低特異性
+    # 訊號（shell in container、sensitive file read）屬於獵捕素材，
+    # 該留在 Loki 與 Wazuh，不該進通知流。
+    #
+    # 代價要知道：Warning 級的真實偵測不會進聊天室。要查時用 Wazuh
+    # 的 Threat Hunting 或 Loki，全量資料都在。
+    # 停用。告警決策已移交 Wazuh：
+    #   Falco → Alloy → syslog → Wazuh 規則層（爆發收斂 + 抑制 + MITRE）
+    #   → Grafana 讀 Wazuh 索引 → DEFAULT contact point → Zulip + Mailpit
+    #
+    # 留著會造成雙重通知，而且是「逐筆」對「收斂後」—— 實測一個特權
+    # Pod 兩分鐘產生 133 筆 level 12，falcosidekick 會逐筆送，Wazuh
+    # 那條只送 1 則。
+    #
+    # webhookurl 留空即停用該輸出（falcosidekick 的慣例），
+    # 保留 extraEnv 與其餘設定，要退回舊架構時改回 critical 即可。
+    minimumpriority: emergency
+    outputformat: all
+    messageformat: ''

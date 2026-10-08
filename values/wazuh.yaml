@@ -1,0 +1,409 @@
+---
+# Wazuh (SIEM) —— POC 縮編版
+#
+# 目標架構：Falco / K8s Audit → Alloy → wazuh-manager-worker:514 (syslog)
+#           → decoder/rule → MITRE 對應 → 告警
+#
+# 為什麼要縮編：kind 的四個節點共用同一份 Docker VM 資源
+# (實測 10 CPU / 15.7 GiB)，而 kubectl get nodes 會把同一份記憶體
+# 報成四份。chart 預設要 3700m CPU / 5.2 GiB (indexer 3 副本 +
+# worker 2 副本)，這座叢集已配置約 3060m，裝不下。
+# 縮編後約 1150m / 2.6 GiB。
+#
+# 不覆寫 cert-manager：chart 的 cert-manager 子 chart 預設就是
+# enabled: false，而叢集已有 cert-manager + trust-manager。
+# certificates.enabled 預設 true，會在本 namespace 建自簽 Issuer。
+
+indexer:
+  # 單副本。chart 會依副本數渲染 cluster.initial_master_nodes，
+  # 已確認 replicas=1 時只列 wazuh-indexer-0，不會卡在叢集組成。
+  replicas: 1
+  # 預設 50Gi。local-path 是精簡配置不會預先佔用，但宣告過大在
+  # 單機上沒有意義。
+  storageSize: 10Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  env:
+    # 預設 -Xms1g -Xmx1g 等於把 requests 的記憶體全給 JVM heap，
+    # 容器本身沒有餘量。降到 768m 留空間給 OpenSearch 的堆外記憶體。
+    OPENSEARCH_JAVA_OPTS: "-Xms768m -Xmx768m -Dlog4j2.formatMsgNoLookups=true"
+    CLUSTER_NAME: "wazuh"
+    NETWORK_HOST: "0.0.0.0"
+    DISABLE_INSTALL_DEMO_CONFIG: "true"
+
+dashboard:
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  gateway:
+    enabled: true
+    host: "wazuh.the-one.k8s"
+    parentRef:
+      group: gateway.networking.k8s.io
+      kind: Gateway
+      name: default
+      namespace: kube-system
+    listenerSet:
+      enabled: false
+
+wazuh:
+  # 索引所有事件，不只是命中規則的。
+  #
+  # POC 除錯期曾開啟：沒命中規則的事件預設會被丟掉，於是「decode 失敗」
+  # 和「規則沒寫對」在 UI 上看起來一模一樣 —— 都是什麼都沒有。
+  # Falco → syslog → decoder → MITRE 這條鏈驗證完成後關閉。
+  #
+  # 關閉後只有命中規則的事件進索引。以目前的規則集，等於只有
+  # priority=Critical 的 Falco 事件 (rule 100110, level 12) 會留下；
+  # Notice 與 Warning 仍會進 analysisd 比對，只是不佔索引空間。
+  # 全量原始日誌在 Loki 那一路，不會因此遺失。
+  #
+  # 要再次除錯時打開它，但記得 KOAD S26 SA Token Read 這類 Notice
+  # 事件佔了 Falco 輸出的一半以上，索引會長得很快。
+  archives:
+    enabled: false
+
+  master:
+    storageSize: 10Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+  worker:
+    # syslog 監聽 (TCP 514) 只在 worker 的 ossec.conf 裡，master 沒有。
+    # Alloy 要打的是 wazuh-manager-worker 這支 Service。
+    replicas: 1
+    storageSize: 10Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+  # ---- Falco 事件的解碼與規則 ----
+  #
+  # 這兩個檔由 ConfigMap 掛到 master 的 /wazuh-config-mount/etc/{decoders,rules}/，
+  # 由 image 的 entrypoint 複製進 /var/ossec，再由 Wazuh 叢集同步到 worker。
+  #
+  # 不要直接改 worker 容器內的檔案：master 會把自己的 ruleset 同步覆寫下來
+  # (實測確認)，改動會在幾十秒內消失，而且症狀是「decoder 匹配不到」
+  # 而非任何錯誤訊息。
+  localDecoder: |
+    <!-- Falco：經 syslog 送入的 JSON -->
+    <!--
+      Alloy 那端必須用 RFC3164，不能用 RFC5424。實測差異：
+        RFC5424 → predecoder 只剝掉 <134>，表頭 "1 ... alloy falco - - -"
+                  留在訊息裡，decoder 無從掛載，事件掉進兜底規則 1002
+        RFC3164 → predecoder 正確取出 program_name / hostname / timestamp
+    -->
+    <decoder name="falco">
+        <program_name>^falco$</program_name>
+    </decoder>
+
+    <decoder name="falco-json">
+        <parent>falco</parent>
+        <plugin_decoder>JSON_Decoder</plugin_decoder>
+    </decoder>
+
+    <!-- Suricata：eve.json 的 alert，同樣經 Alloy 以 RFC3164 syslog 送入 -->
+    <!--
+      Wazuh 內建的 0475-suricata_rules.xml 在這條路線上不會觸發：
+      它的 86600 用 <decoded_as>json</decoded_as>，而經 syslog 進來的事件
+      會先掛上 program_name 的 decoder，不是裸 json。
+      這不是缺點 —— 86601 把「每一筆 Suricata alert」一律打成 level 3，
+      不分 severity 也不分 category，在 level >= 13 才通知的架構下等於
+      Suricata 永遠不會告警。自己寫一組反而拿回分級能力。
+    -->
+    <decoder name="suricata-syslog">
+        <program_name>^suricata$</program_name>
+    </decoder>
+
+    <decoder name="suricata-syslog-json">
+        <parent>suricata-syslog</parent>
+        <plugin_decoder>JSON_Decoder</plugin_decoder>
+    </decoder>
+
+  localRules: |
+    <group name="falco,">
+
+      <!-- level 0：只負責解碼與分類，不產生告警，避免每筆事件都是噪音 -->
+      <rule id="100100" level="0">
+        <decoded_as>falco</decoded_as>
+        <description>Falco: 事件已解碼</description>
+      </rule>
+
+      <!--
+        MITRE 編號必須存在於 Wazuh 內建的 mitre.db。該資料庫是約 2023-05 的
+        ATT&CK 快照 (4.14.3 實測 max(modified_time) = 2023-05-04)，查不到
+        KOAD 規則主標的 T1685 —— 那是 2026-04-14 才建立的新編號。
+
+        實測未知編號的行為是「靜默降級」而非失敗：
+          ** WARNING: Mitre Technique ID 'T1685' not found in database.
+        規則照樣載入、照樣觸發 level 12 告警，只是 mitre.id / mitre.tactic /
+        mitre.technique 三個欄位整組消失。告警還在所以表面正常，但 ATT&CK
+        對應沒了 —— 這比直接報錯難發現得多。
+
+        所以這裡用 T1562.001。這正是當初 KOAD 規則同時保留 T1562 的價值。
+      -->
+      <rule id="100110" level="12">
+        <if_sid>100100</if_sid>
+        <field name="priority">^Critical$</field>
+        <description>Falco Critical: $(rule)</description>
+        <mitre>
+          <id>T1562.001</id>
+        </mitre>
+      </rule>
+
+
+      <!-- ==== k8s_audit 來源 ==== -->
+      <!--
+        audit 事件早就在管線裡 (Falco 的 k8saudit plugin 與 syscall 事件
+        同樣寫到 stdout)，只是先前唯一的告警規則 100110 只匹配
+        priority=Critical，而 audit 事件是 Error/Notice，所以一筆都沒進
+        Wazuh。要補的不是管線而是規則。
+      -->
+
+      <rule id="100120" level="0">
+        <if_sid>100100</if_sid>
+        <field name="source">^k8s_audit$</field>
+        <description>Falco k8s_audit: 事件已解碼</description>
+      </rule>
+
+      <!--
+        服務帳號讀 Secret 是基礎設施的正常行為：實測 477 筆中有 438 筆
+        來自 alloy-logs / grafana-operator / alloy-singleton /
+        alloy-operator。明確寫一條靜音規則而不是略過不寫 —— 寫出來才
+        看得出這是「刻意忽略」而非「沒想到」。
+        必須排在 100122 之前，同一組 if_sid 下先匹配者勝。
+      -->
+      <rule id="100121" level="0">
+        <if_sid>100120</if_sid>
+        <field name="rule">^K8s Secret Get Successfully$</field>
+        <field name="output_fields.ka.user.name">^system:serviceaccount:</field>
+        <description>Falco k8s_audit: 服務帳號讀取 Secret（預期行為）</description>
+      </rule>
+
+      <!-- 非服務帳號讀 Secret，例如帶 cluster-admin 的人類操作者 -->
+      <rule id="100122" level="8">
+        <if_sid>100120</if_sid>
+        <field name="rule">^K8s Secret Get Successfully$</field>
+        <description>Falco k8s_audit: 非服務帳號讀取 Secret</description>
+        <mitre>
+          <id>T1552.007</id>
+        </mitre>
+      </rule>
+
+      <!-- 讀取被拒代表權限不足卻嘗試，比成功更值得看 -->
+      <rule id="100123" level="10">
+        <if_sid>100120</if_sid>
+        <field name="rule">^K8s Secret Get Unsuccessfully Tried$</field>
+        <description>Falco k8s_audit: Secret 讀取遭拒</description>
+        <mitre>
+          <id>T1552.007</id>
+        </mitre>
+      </rule>
+
+      <rule id="100124" level="10">
+        <if_sid>100120</if_sid>
+        <field name="rule">^Attach/Exec Pod$</field>
+        <description>Falco k8s_audit: 對 Pod 執行 attach/exec</description>
+        <mitre>
+          <id>T1609</id>
+        </mitre>
+      </rule>
+
+      <!--
+        這條不可省略。100120 與 100110 同屬 if_sid 100100，而 k8s_audit
+        事件會先匹配 100120 (level 0)，100110 的 Critical 判斷就沒有機會
+        執行 —— 結果是所有 Critical 的 audit 事件被靜默吞掉。
+        實測：KOAD S09 ClusterRoleBinding Created (priority=Critical)
+        只命中 100120 level 0，完全不產生告警。
+        syscall 的 Critical 不受影響，因為 100120 要求 source=k8s_audit，
+        所以這個缺口在表面上完全看不出來。
+        不掛 MITRE：這是涵蓋所有 KOAD audit 規則的兜底，硬掛單一編號
+        會誤標。具體技術由下面各自的規則補。
+      -->
+      <rule id="100125" level="12">
+        <if_sid>100120</if_sid>
+        <field name="priority">^Critical$</field>
+        <description>Falco k8s_audit Critical: $(rule)</description>
+      </rule>
+
+      <!-- RBAC 綁定變更是權限提升的直接前兆 -->
+      <rule id="100126" level="13">
+        <if_sid>100125</if_sid>
+        <field name="rule">ClusterRoleBinding|Cluster Admin</field>
+        <description>Falco k8s_audit: ClusterRoleBinding 變更 — $(rule)</description>
+        <mitre>
+          <id>T1098</id>
+        </mitre>
+      </rule>
+
+
+      <!-- ==== 告警收斂：爆發偵測與抑制 ==== -->
+      <!--
+        「Wazuh 當告警大腦」的核心不在輸出通道，而在這裡：
+        索引保留全量供獵捕，通知只給「事件」而不是「每一筆紀錄」。
+
+        100110 / 100125 維持 level 12 繼續進索引，但不該是通知的對象 ——
+        一次攻擊會產生幾十上百筆，逐筆通知就是告警疲勞的來源。
+        下面兩條把重複收斂成一則，並以 ignore 在抑制期內不再重複。
+
+        參數的依據：先前實測 KOAD S13 一次 ls / 產生 186 筆、
+        S04 在健康探針下每分鐘上百筆。8 次/60 秒 足以濾掉零星事件，
+        又能在真實爆發時於一分鐘內通知。
+        ignore="300" 表示同一條規則五分鐘內只通知一次。
+      -->
+
+      <rule id="100130" level="13" frequency="8" timeframe="60" ignore="300">
+        <if_matched_sid>100110</if_matched_sid>
+        <same_field>data.rule</same_field>
+        <description>Falco 事件爆發: $(data.rule) 於 60 秒內觸發 8 次以上</description>
+      </rule>
+
+      <!--
+        audit 事件的頻率天然低於 syscall，門檻要跟著調低，
+        否則永遠達不到而形同虛設。
+      -->
+      <rule id="100131" level="13" frequency="5" timeframe="120" ignore="300">
+        <if_matched_sid>100125</if_matched_sid>
+        <same_field>data.rule</same_field>
+        <description>Falco k8s_audit 爆發: $(data.rule) 於 120 秒內觸發 5 次以上</description>
+      </rule>
+
+      <!--
+        跨規則的關聯：短時間內出現多種不同的 Critical，比單一規則
+        重複更值得注意 —— 那像是一連串的攻擊step，而非單點雜訊。
+        這條刻意不加 same_field，要的就是「不同規則」。
+      -->
+      <rule id="100132" level="14" frequency="12" timeframe="120" ignore="600">
+        <if_matched_sid>100110</if_matched_sid>
+        <description>Falco 多重 Critical: 120 秒內累計 12 次以上，疑似攻擊進行中</description>
+      </rule>
+
+    </group>
+
+    <!-- ================= Suricata (網路層) ================= -->
+    <!--
+      Suricata 在這個生態系裡的角色，與 Falco 互補而非重疊：
+        Falco     看「主機裡發生了什麼」—— 行程、檔案、syscall
+        K8s Audit 看「控制平面被怎麼操作」—— RBAC、Pod 規格
+        Suricata  看「封包在網路上怎麼走」—— C2 回連、掃描、橫向移動
+
+      前兩者都看不到的典型場景：一個沒有被 Falco 規則涵蓋的
+      行程對外發 DNS beacon，或是一個被入侵的 Pod 在內網掃連接埠。
+
+      已知的視野限制 (寫在這裡以免日後誤判覆蓋率)：
+      Cilium native routing 下同節點的 Pod 互連不經過 eth0，
+      Suricata 只看得到跨節點與進出叢集的流量。
+    -->
+    <group name="suricata,ids,">
+
+      <rule id="100200" level="0">
+        <decoded_as>suricata-syslog</decoded_as>
+        <description>Suricata: 事件已解碼</description>
+      </rule>
+
+      <!--
+        基準規則。level 3 的用意是「進索引但不通知」：
+        alerts.json 的門檻是 level >= 3，通知的門檻是 level >= 13。
+        實測 Suricata 的 alert 有 70% 是環境造成的協定異常，
+        逐筆通知毫無意義，但留在索引裡才能做 Threat Hunting。
+      -->
+      <rule id="100201" level="3">
+        <if_sid>100200</if_sid>
+        <field name="event_type">^alert$</field>
+        <description>Suricata: $(alert.signature) [$(src_ip) -> $(dest_ip)]</description>
+      </rule>
+
+      <!--
+        以 classtype 分級優先於 severity。ET Open 的 severity 是由
+        classtype 推導出來的，但自訂規則常常漏寫 priority 而一律落在 3，
+        classtype 則是寫規則時幾乎一定會填的欄位。
+      -->
+      <rule id="100202" level="12">
+        <if_sid>100201</if_sid>
+        <field name="alert.category">Privilege Gain|Trojan|Malware|Exploit|Shellcode|Web Application Attack|Command and Control</field>
+        <description>Suricata 高危特徵: $(alert.signature)</description>
+        <mitre>
+          <id>T1071</id>
+        </mitre>
+      </rule>
+
+      <!-- severity 1 = Suricata 規則自己宣告的最高優先級 -->
+      <rule id="100203" level="12">
+        <if_sid>100201</if_sid>
+        <field name="alert.severity">^1$</field>
+        <description>Suricata 高優先級: $(alert.signature)</description>
+      </rule>
+
+      <rule id="100204" level="8">
+        <if_sid>100201</if_sid>
+        <field name="alert.severity">^2$</field>
+        <description>Suricata 中優先級: $(alert.signature)</description>
+      </rule>
+
+
+      <!-- ==== 告警收斂：與 Falco 那組同樣的設計 ==== -->
+      <!--
+        網路事件天生比主機事件密集，門檻要比 Falco 的 8/60 秒高。
+        同一條特徵在一分鐘內命中 15 次以上，代表的是「持續行為」
+        而非單一封包 —— 那才是值得送出的一則通知。
+      -->
+      <rule id="100210" level="13" frequency="15" timeframe="60" ignore="300">
+        <if_matched_sid>100201</if_matched_sid>
+        <same_field>data.alert.signature</same_field>
+        <description>Suricata 事件爆發: $(alert.signature) 於 60 秒內觸發 15 次以上</description>
+      </rule>
+
+      <!-- 高危特徵不必等爆發，重複幾次就該通知 -->
+      <rule id="100211" level="13" frequency="3" timeframe="120" ignore="300">
+        <if_matched_sid>100202</if_matched_sid>
+        <description>Suricata 高危特徵重複出現: $(alert.signature)</description>
+      </rule>
+
+      <!--
+        這條是 Suricata 在 SOC 裡最獨特的價值：
+        同一個來源 IP 在短時間內觸發大量 alert，形狀就是掃描或橫向移動。
+        Falco 看不到這件事 —— 對它而言那只是某個行程開了幾個 socket。
+        刻意不加 same_field signature：要的就是「同一來源、各式各樣的命中」。
+      -->
+      <rule id="100212" level="13" frequency="25" timeframe="60" ignore="600">
+        <if_matched_sid>100201</if_matched_sid>
+        <same_field>data.src_ip</same_field>
+        <description>Suricata: 單一來源 $(src_ip) 於 60 秒內觸發 25 次以上，疑似掃描或橫向移動</description>
+        <mitre>
+          <id>T1046</id>
+        </mitre>
+      </rule>
+
+    </group>
+
+agent:
+  # syslog 路線不需要 agent。保留是因為它是備案：
+  # 若 JSON 經 syslog 封裝後無法正確 decode，就改讓 agent 直接讀
+  # /var/log/containers/*falco*.log 並以 log_format json 解析。
+  images:
+    # 4.14.x 等版本 tag 只有 linux/amd64，multi-arch (amd64 + arm64) 只有 latest；
+    # 加上 manifest list 的 digest 固定內容，仍保有 multi-arch。更新時以
+    # `docker buildx imagetools inspect kinseii/wazuh-agent:latest` 取得新的 Digest 替換
+    tag: "latest@sha256:ab831cd26287cf4a6ab59cfc836b6a72fdc1383921a1a11519a782b44bde8f98"
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule

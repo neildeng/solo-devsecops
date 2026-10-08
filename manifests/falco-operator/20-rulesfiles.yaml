@@ -1,0 +1,80 @@
+---
+# 所有 ociArtifact 都走本機的 pull-through mirror（registry/compose.yaml
+# 起的 mirror-ghcr-io，上游是 ghcr.io），不直連 ghcr.io。
+#
+# 實測 5 MB 的 plugin blob：
+#   直連 ghcr.io      148 秒
+#   mirror 快取命中     0.008 秒
+# 四個 plugin 加兩個 ruleset、每個節點各拉一份，差別就是「十幾分鐘」
+# 與「幾秒」。這也是預設 livenessProbe（45 秒）會殺掉 artifact sidecar
+# 的原因，見 30-falco.yaml。
+#
+# 相依：CoreDNS 的 hosts 區塊負責讓 Pod 解析 mirror-ghcr-io，
+#       manifests/ccnp/91-falco-oci-mirror.yaml 負責放行網路。
+# mirror 不可用時把 name 改回 ghcr.io 並移除 plainHTTP 即可，只是會變慢。
+# 規則檔的載入順序由 priority 決定（0-99，數字越大越優先）。
+#
+# 順序有兩個硬性要求，兩者都指向「KOAD 必須後於內建載入」：
+#   1. KOAD 的 k8saudit 規則用到 k8s_audit_rules.yaml 定義的 kevt macro，
+#      先於它載入會整檔失敗：
+#        LOAD_ERR_VALIDATE: Undefined macro 'kevt' used in filter.
+#   2. KOAD 檔尾用 enabled: false 停用會遮蔽 S06 的內建規則
+#      Create Privileged Pod，覆寫只在後載入時生效。
+#
+# 套用後務必確認產生的 rules_files 順序：
+#   kubectl -n kube-security exec ds/falco -c falco -- \
+#     grep -A6 '^rules_files' /etc/falco/falco.yaml
+apiVersion: artifact.falcosecurity.dev/v1alpha1
+kind: Rulesfile
+metadata:
+  name: falco-rules
+  namespace: kube-security
+spec:
+  priority: 10
+  ociArtifact:
+    image:
+      repository: falcosecurity/rules/falco-rules
+      tag: "5.2.0"
+    registry:
+      name: mirror-ghcr-io:5000
+      plainHTTP: true
+---
+apiVersion: artifact.falcosecurity.dev/v1alpha1
+kind: Rulesfile
+metadata:
+  name: k8saudit-rules
+  namespace: kube-security
+spec:
+  priority: 20
+  # 注意倉庫路徑：k8saudit 的規則包在 plugins/ruleset/ 底下，
+  # 不是 rules/ ——  用 falcosecurity/rules/k8saudit-rules 會得到
+  # 403 denied，看起來像權限問題，其實是路徑不存在。
+  ociArtifact:
+    image:
+      repository: falcosecurity/plugins/ruleset/k8saudit
+      tag: "0.18"
+    registry:
+      name: mirror-ghcr-io:5000
+      plainHTTP: true
+---
+# KOAD 自訂規則。ConfigMap 由 bootstrap 以 --from-file 產生，
+# 內容就是 values/falco/rules-*.yaml 那兩個檔。
+apiVersion: artifact.falcosecurity.dev/v1alpha1
+kind: Rulesfile
+metadata:
+  name: koad-syscall
+  namespace: kube-security
+spec:
+  priority: 60
+  configMapRef:
+    name: koad-rules-syscall
+---
+apiVersion: artifact.falcosecurity.dev/v1alpha1
+kind: Rulesfile
+metadata:
+  name: koad-k8saudit
+  namespace: kube-security
+spec:
+  priority: 61
+  configMapRef:
+    name: koad-rules-k8saudit

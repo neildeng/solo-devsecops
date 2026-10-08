@@ -1,0 +1,35 @@
+# ghcr.io 的 pull-through 快取。
+#
+# 用途見文章第 4 篇：falcoctl 在 Pod 裡自己拉 OCI artifact，不經過 containerd，
+# 所以節點上的 registry mirror 設定對它無效。實測 5 MB 的 plugin blob：
+#   直連 ghcr.io    148 秒
+#   快取命中         0.008 秒
+#
+# 必須與 kind 叢集在同一個 Docker 網路，Pod 才連得到。kind 建立的網路就叫 kind，
+# 所以這裡用 external 接上去 —— 要先有叢集再 compose up。
+#
+# 起來之後取得它的 IP，填進兩個地方：
+#   docker inspect mirror-ghcr-io --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+#   1) manifests/coredns/coredns-configmap.yaml 的 hosts 區塊（讓 Pod 解析得到名稱）
+#   2) manifests/ccnp/91-falco-oci-mirror.yaml 的 toCIDR（放行網路）
+#
+# 不想用 mirror 的話，把 manifests/falco-operator/ 裡的 registry.name 改回 ghcr.io
+# 並移除 plainHTTP 即可，只是部署會慢很多。
+name: registry-cache
+services:
+    mirror-ghcr-io:
+        image: registry:3
+        container_name: mirror-ghcr-io
+        restart: unless-stopped
+        environment:
+            REGISTRY_PROXY_REMOTEURL: "https://ghcr.io"
+            REGISTRY_STORAGE_DELETE_ENABLED: "true"
+        ports:
+            - "12345:5000"
+        volumes:
+            - ./data/ghcr.io:/var/lib/registry
+        networks:
+            - kind
+networks:
+    kind:
+        external: true

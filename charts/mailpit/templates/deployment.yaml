@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mailpit.fullname" . }}
+  labels:
+    {{- include "mailpit.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # 郵件存在單一 Pod（記憶體或 PVC）裡，多副本會讓收到的信散落在不同 Pod，
+  # 所以用 Recreate 而非 RollingUpdate，避免更新期間新舊並存
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "mailpit.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mailpit.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: mailpit
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default (printf "v%s" .Chart.AppVersion) }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: smtp
+              containerPort: {{ .Values.smtp.port }}
+            - name: http
+              containerPort: {{ .Values.ui.port }}
+          env:
+            - name: MP_SMTP_BIND_ADDR
+              value: "0.0.0.0:{{ .Values.smtp.port }}"
+            - name: MP_UI_BIND_ADDR
+              value: "0.0.0.0:{{ .Values.ui.port }}"
+            - name: MP_MAX_MESSAGES
+              value: {{ .Values.maxMessages | quote }}
+            {{- if .Values.smtp.authAcceptAny }}
+            - name: MP_SMTP_AUTH_ACCEPT_ANY
+              value: "1"
+            {{- end }}
+            {{- if .Values.smtp.authAllowInsecure }}
+            - name: MP_SMTP_AUTH_ALLOW_INSECURE
+              value: "1"
+            {{- end }}
+            {{- if .Values.ui.authFile }}
+            - name: MP_UI_AUTH
+              value: {{ .Values.ui.authFile | quote }}
+            {{- end }}
+            {{- if .Values.persistence.enabled }}
+            - name: MP_DATABASE
+              value: /data/mailpit.db
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            # readOnlyRootFilesystem 下仍需要可寫的暫存空間
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "mailpit.fullname" . }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

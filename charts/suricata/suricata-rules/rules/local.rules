@@ -1,0 +1,18 @@
+# 煙霧測試規則：確認「封包 → Suricata → eve.json → Alloy → Loki/Wazuh」整條鏈是通的。
+# 限定 IPv4 echo request (itype:8) 且兩端都在 $HOME_NET：原本寫成 `icmp any any -> any any`
+# 會連 IPv6 的 router solicitation / neighbor discovery multicast 一起收，實測 16 分鐘
+# 自己就產生 27 筆，是個永久的噪音來源而非測試訊號。
+# 補上 classtype：沒有它的話 eve.json 的 alert.category 是空字串，Wazuh 分級時無從依據。
+# threshold 也不能省：叢集節點之間本來就有背景 ICMP（實測幾分鐘 113 筆，
+# 來源是 control-plane → worker 的健康檢查）。那個量會讓 Wazuh 的爆發規則
+# 100210 誤判成「事件爆發」而送出 level 13 通知 —— 煙霧測試規則反而變成
+# 告警疲勞的來源。每個來源 5 分鐘只記一筆，仍足以驗證鏈路。
+alert icmp $HOME_NET any -> $HOME_NET any (msg:"K8s Suricata ICMP Test"; itype:8; icode:0; threshold:type limit, track by_src, count 1, seconds 300; classtype:misc-activity; metadata:mitre_tactic_id TA0007, mitre_tactic_name Discovery, mitre_technique_id T1046, mitre_technique_name Network_Service_Discovery; sid:1000001; rev:5;)
+# Alloy 以 snappy 壓縮推送 log 給 Loki，會觸發 Suricata 內建 http-events.rules 的 sid 2221033 (abnormal Content-Encoding)，
+# alert 又被 Alloy 收集回 Loki，形成自我放大迴圈；只放行這段流量，其他 Content-Encoding 異常照常偵測
+pass http any any -> any any (msg:"K8s Allow Alloy log push to Loki"; flow:established,to_server; http.method; content:"POST"; http.uri; content:"/loki/api/v1/push"; startswith; http.user_agent; content:"Alloy/"; startswith; sid:1000002; rev:1;)
+# 偵測由叢集內部發起、往外網送的流量 (egress)。Cilium 在離開 node 時做 masquerade，來源為 node IP。
+# $HOME_NET 只含 IPv4 私有網段：來源另外納入 node 的 IPv6 ULA (fc00::/7)，目的排除 ULA、link-local、
+# multicast、loopback 等不會離開叢集的位址 (不直接改 HOME_NET，避免影響所有 ET 規則的方向判斷)；
+# 同一組 src/dst IP 每 10 分鐘只記一筆，用於掌握「有哪些流量往外送」，非攻擊判定故為 Low (misc-activity)
+alert ip [$HOME_NET,fc00::/7] any -> [$EXTERNAL_NET,!127.0.0.0/8,!169.254.0.0/16,!224.0.0.0/4,!255.255.255.255,!fc00::/7,!fe80::/10,!ff00::/8,!::1] any (msg:"K8s Egress traffic leaving cluster to external network"; flow:to_server; threshold:type limit, track by_both, count 1, seconds 600; classtype:misc-activity; sid:1000003; rev:2;)

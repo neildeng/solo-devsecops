@@ -1,0 +1,47 @@
+---
+# Falco 的設定片段。
+#
+# Config CR 以 priority 排序後合併成最終的 falco.yaml，
+# 數字越大越優先。這裡只有一份，所以用預設的 50。
+#
+# plugins / load_plugins 刻意不寫：由 Plugin CR 管理，operator 會自行
+# 產生對應的設定，手寫會與它衝突。
+apiVersion: artifact.falcosecurity.dev/v1alpha1
+kind: Config
+metadata:
+  name: koad-falco-config
+  namespace: kube-security
+spec:
+  priority: 50
+  config:
+    # Apple Silicon (arm64) 上 modern_ebpf 可用；啟動時會抱怨找不到
+    # sys_enter_open / sys_enter_creat tracepoint，那是 arm64 沒有這兩個
+    # syscall（只有 openat），屬正常現象可忽略。
+    engine:
+      kind: modern_ebpf
+
+    # 送事件給 falcosidekick。Helm chart 會自動串接這一段，
+    # operator 不會 —— 少了它 Zulip 與 Mailpit 的告警全部停掉，
+    # 而 Falco 本身的 stdout 照常輸出，表面上看不出來。
+    http_output:
+      enabled: true
+      url: "http://falcosidekick.kube-security.svc.cluster.local:2801/"
+
+    # Wazuh 的 decoder 依賴 JSON 格式，不能關。
+    # stdout 也必須保留：Alloy 讀的是容器日誌，不是 http_output。
+    stdout_output:
+      enabled: true
+    json_output: true
+    json_include_output_property: true
+    log_stderr: true
+    log_syslog: false
+    watch_config_files: false
+
+    # 最低評估優先級。自訂規則最低是 NOTICE (S26)，設 notice 可濾掉內建的
+    # DEBUG/INFO 規則，大幅降低雜訊。
+    #
+    # 副作用要記得：低於這個門檻的內建規則不會被載入，也就不會遮蔽同類的
+    # 自訂規則。KOAD S09 能觸發正是因為它的競爭者
+    # K8s ClusterRoleBinding Created 是 Informational。調低這個值會讓
+    # 更多內建規則載入並搶走事件。
+    priority: notice

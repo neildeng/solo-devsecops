@@ -1,0 +1,18 @@
+---
+# step-issuer 的 values。caBundle 與 provisioner.kid 必須對應到你自己
+# 產生的那一份 step-ca —— 所以這份是範例，實際的由 bootstrap.md 的
+# 「step-certificates/step-issuer」那一段自動產生（並已列入 .gitignore）。
+stepClusterIssuer:
+  create: true
+  caUrl: "https://step-certificates.smallstep.svc.cluster.local"
+  # base64(root_ca.crt)，從 values/step-certificates.yaml 的
+  # .inject.certificates.root_ca 取得
+  caBundle: "REPLACE_WITH_BASE64_ROOT_CA"
+  provisioner:
+    name: "the-one"
+    # 從 .inject.config.files."ca.json".authority.provisioners[0].key.kid 取得
+    kid: "REPLACE_WITH_PROVISIONER_KID"
+    passwordRef:
+      name: "step-certificates-provisioner-password"
+      namespace: "smallstep"
+      key: "password"
