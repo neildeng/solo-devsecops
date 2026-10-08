@@ -1,0 +1,11 @@
+
+body { max-width: 46em; margin: 3em auto; padding: 0 1.5em;
+       font-family: -apple-system, "PingFang TC", "Noto Sans TC", sans-serif;
+       font-size: 18px; line-height: 1.8; color: #111; }
+h1 { font-size: 2em; } h2 { font-size: 1.5em; margin-top: 2em; } h3 { font-size: 1.2em; }
+pre { background: #f6f8fa; padding: 1em; border-radius: 6px; overflow-x: auto;
+      font-size: 14px; line-height: 1.5; }
+code { font-family: "SF Mono", Menlo, monospace; }
+blockquote { border-left: 3px solid #ccc; margin-left: 0; padding-left: 1em; color: #444; }
+img { max-width: 100%; }
+hr { border: none; border-top: 1px solid #ddd; margin: 2.5em 0; }

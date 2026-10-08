@@ -37,7 +37,8 @@ RAW = "https://raw.githubusercontent.com/neildeng/solo-devsecops/main/articles/"
 BLOB = "https://github.com/neildeng/solo-devsecops/blob/main/articles/"
 
 DIR = pathlib.Path(__file__).resolve().parent
-OUT = DIR.parent / "build" / "medium"
+ROOT = DIR.parent
+DEFAULT_OUT = ROOT / "build" / "medium"
 
 
 def width(s: str) -> int:
@@ -152,25 +153,49 @@ hr { border: none; border-top: 1px solid #ddd; margin: 2.5em 0; }
 """
 
 
-def convert(path: pathlib.Path, limit: int) -> None:
+def convert(path: pathlib.Path, limit: int, out: pathlib.Path) -> None:
     md, wide = preprocess(path.read_text(), limit, path.name)
-    OUT.mkdir(parents=True, exist_ok=True)
-    dst = OUT / (path.stem + ".html")
+    out.mkdir(parents=True, exist_ok=True)
+    dst = out / (path.stem + ".html")
 
-    css = OUT / "_style.css"
-    css.write_text(CSS)
+    # 檔名不以底線開頭：GitHub Pages 的 Jekyll 會略過 _ 開頭的檔案
+    (out / "style.css").write_text(CSS)
     subprocess.run(
         ["pandoc", "--from", "gfm", "--to", "html5", "--standalone",
-         "--metadata", f"title={path.stem}", "--css", "_style.css", "-o", str(dst)],
+         "--metadata", f"title={path.stem}", "--css", "style.css", "-o", str(dst)],
         input=md, text=True, check=True,
     )
     note = f"  · {len(wide)} 個寬表格改用清單（最寬 {max(wide)} 欄）" if wide else ""
-    print(f"{dst.relative_to(OUT.parent.parent)}{note}")
+    print(f"{dst.relative_to(ROOT)}{note}")
+
+
+def write_index(out: pathlib.Path, files: list[pathlib.Path]) -> None:
+    """GitHub Pages 的目錄頁。每一篇都附可直接丟給 Medium import 的網址。"""
+    rows = []
+    for f in files:
+        title = next((l[2:].strip() for l in f.read_text().split("\n")
+                      if l.startswith("# ")), f.stem)
+        rows.append(f'<li><a href="{f.stem}.html">{title}</a></li>')
+    (out / "index.html").write_text(
+        "<!doctype html>\n<html lang=\"zh-Hant\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        "<title>一個人的 DevSecOps</title>"
+        f"<style>{CSS}</style></head><body>\n"
+        "<h1>一個人的 DevSecOps</h1>\n"
+        "<p>這些頁面是給 Medium 用的轉檔版本 —— 可以直接貼上，"
+        "或把單篇網址丟進 <a href=\"https://medium.com/p/import\">Medium 的 import</a>。</p>\n"
+        "<p>原始碼與完整的 Markdown 在 "
+        "<a href=\"https://github.com/neildeng/solo-devsecops\">github.com/neildeng/solo-devsecops</a>。</p>\n"
+        "<ol>\n" + "\n".join(rows) + "\n</ol>\n</body></html>\n")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("files", nargs="*", help="要轉的 .md，省略則全部八篇")
+    ap.add_argument("--out", type=pathlib.Path, default=DEFAULT_OUT,
+                    help="輸出目錄（預設 build/medium；要發佈到 GitHub Pages 就指定 docs）")
+    ap.add_argument("--index", action="store_true",
+                    help="另外產生 index.html 目錄頁，給 GitHub Pages 用")
     ap.add_argument("--width", type=int, default=76,
                     help="表格寬度上限，超過改用清單（預設 76，約為 Medium 程式碼區塊不捲動的寬度）")
     args = ap.parse_args()
@@ -179,16 +204,23 @@ def main() -> int:
         print("需要 pandoc：brew install pandoc", file=sys.stderr)
         return 1
 
+    out = args.out if args.out.is_absolute() else ROOT / args.out
     files = [DIR / f for f in args.files] if args.files else sorted(DIR.glob("0*.md"))
     for f in files:
         if not f.exists():
             print(f"找不到 {f}", file=sys.stderr)
             return 1
-        convert(f, args.width)
+        convert(f, args.width, out)
 
-    print(f"\n產出在 {OUT}/")
+    if args.index:
+        write_index(out, files)
+        # 不要讓 Jekyll 處理，否則底線開頭的檔案與部分路徑會被吃掉
+        (out / ".nojekyll").write_text("")
+        print(f"{(out / 'index.html').relative_to(ROOT)}")
+
+    print(f"\n產出在 {out}/")
     print("貼進 Medium 的方式：瀏覽器開啟 .html → 全選 → 複製 → 貼到空白草稿。")
-    print("第一個大標題會成為 Medium 的文章標題。")
+    print("或用 Medium 的 import：https://medium.com/p/import 貼上該頁的公開網址。")
     return 0
 
 

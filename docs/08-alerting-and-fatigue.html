@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>08-alerting-and-fatigue</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">08-alerting-and-fatigue</h1>
+</header>
+<h1 id="一個人的-devsecops-8最後一哩與告警疲勞">一個人的 DevSecOps
+(8)：最後一哩與告警疲勞</h1>
+<h2 id="背景說明">背景說明</h2>
+<p>偵測有了、判斷有了，剩下最後一哩：<strong>把告警送到你會看到的地方。</strong></p>
+<p>這一哩看起來最簡單，實際上是最容易讓前面七篇白做的一哩。原因很簡單：
+一個被洗版的頻道等於一個被靜音的頻道，而被靜音的頻道等於沒有告警系統。</p>
+<p>本文做三件事：</p>
+<ol type="1">
+<li>把 Wazuh 的判斷結果經 Grafana 送出去，以及為什麼繞這一圈</li>
+<li>拆解這條鏈上<strong>四個靜默失敗點</strong></li>
+<li>用實測數字談告警疲勞：<strong>每分鐘 300 則 →
+只剩真實事件</strong></li>
+</ol>
+<p>然後收尾整個系列。</p>
+<h2 id="環境必須">環境必須</h2>
+<ol type="1">
+<li>已完成第 7 篇（Wazuh 規則層）</li>
+<li>一個通知目的地。本系列用 Zulip（聊天室）+ Mailpit（本機 SMTP）</li>
+</ol>
+<h2 id="1-為什麼不用-wazuh-原生的-integration">1. 為什麼不用 Wazuh
+原生的 integration</h2>
+<p>最直覺的做法是讓 Wazuh 自己發通知——它有
+<code>&lt;integration&gt;</code> 和
+<code>&lt;email_alerts&gt;</code>。試了之後遇到兩個阻礙：</p>
+<ol type="1">
+<li>chart 沒有開 <code>integration</code> / <code>email</code>
+的設定入口</li>
+<li>Wazuh 的 <code>ossec.conf</code> <strong>沒有 <code>conf.d</code>
+機制</strong>——要加任何一段，只能把整份 293 行接管進 values
+並<strong>永久維護</strong></li>
+</ol>
+<p>接管 293 行設定檔是一筆長期負債：上游每次改版你都要手動 diff。</p>
+<p>這時候回頭問一個問題很有幫助：</p>
+<blockquote>
+<p><strong>「讓 Wazuh 當告警大腦」要的是什麼？</strong>
+是<strong>判斷邏輯在 Wazuh</strong>，不是<strong>封包從 Wazuh
+的網路介面出去</strong>。</p>
+</blockquote>
+<p>我一開始把這兩件事綁在一起，才會覺得非改 <code>ossec.conf</code>
+不可。</p>
+<p>拆開之後，中間路線就出現了：<strong>Wazuh 只負責判斷，Grafana
+負責送。</strong></p>
+<pre><code>Falco / Suricata / K8s Audit
+  → Alloy → syslog
+  → Wazuh 規則層（爆發收斂 + 抑制 + MITRE）
+  → Grafana（Elasticsearch 資料來源讀 wazuh-alerts-4.x-*）
+  → DEFAULT contact point → Zulip + Mailpit</code></pre>
+<p>多了一跳，但<strong>決策仍然在
+Wazuh</strong>。而且副作用反而更好：通知路徑變成單一出口，
+分組、靜音、重送間隔都在同一個地方設。原本 falcosidekick 一套、Wazuh
+一套的話， 抑制規則會散在兩處。</p>
+<blockquote>
+<p><strong>繞路不一定是妥協。</strong>
+先問清楚自己要的是哪個維度，再決定要硬改還是繞。</p>
+</blockquote>
+<h2 id="2-意外的好消息opensearch-可以直接當-elasticsearch-用">2.
+意外的好消息：OpenSearch 可以直接當 Elasticsearch 用</h2>
+<p>Wazuh 的 indexer 是 OpenSearch，而 Grafana 自 8.x 之後移除了
+OpenSearch 的 內建支援（要裝外掛）。本來以為得想辦法裝外掛或改走
+Infinity 資料來源。</p>
+<p>實際測下來不用：<strong>Wazuh 的 indexer 已經開了
+<code>compatibility.override_main_response_version</code></strong>，回報的版本號偽裝成
+Elasticsearch 7，Grafana 內建的 Elasticsearch 資料來源可以直接連。</p>
+<p>值得記的不是這個結論，是找到它的方式：</p>
+<blockquote>
+<p><strong>「先去問服務自己回報什麼」比「查文件說支援什麼」快。</strong>
+一個 <code>curl /</code> 就看到了。</p>
+</blockquote>
+<h2 id="3-靜默失敗點一valuesfrom-的層級">3.
+靜默失敗點一：<code>valuesFrom</code> 的層級</h2>
+<p>資料來源要用 secret 裡的帳密。grafana-operator 的寫法是：</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">datasource</span><span class="kw">:</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> Wazuh</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">uid</span><span class="kw">:</span><span class="at"> wazuh-alerts</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> elasticsearch</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">url</span><span class="kw">:</span><span class="at"> https://wazuh-indexer.kube-security.svc.cluster.local:9200</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">jsonData</span><span class="kw">:</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">timeField</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;@timestamp&quot;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">index</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;wazuh-alerts-4.x-*&quot;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">tlsSkipVerify</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">basicAuth</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">basicAuthUser</span><span class="kw">:</span><span class="at"> ${INDEXER_USERNAME}</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">secureJsonData</span><span class="kw">:</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">basicAuthPassword</span><span class="kw">:</span><span class="at"> ${INDEXER_PASSWORD}</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># valuesFrom 本身在 spec 層級</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">valuesFrom</span><span class="kw">:</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">targetPath</span><span class="kw">:</span><span class="at"> basicAuthUser          # ← 但這是「相對於 spec.datasource」</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">valueFrom</span><span class="kw">:</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">secretKeyRef</span><span class="kw">:</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">name</span><span class="kw">:</span><span class="at"> wazuh-indexer-cred</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">key</span><span class="kw">:</span><span class="at"> INDEXER_USERNAME</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">targetPath</span><span class="kw">:</span><span class="at"> secureJsonData.basicAuthPassword</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">valueFrom</span><span class="kw">:</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">secretKeyRef</span><span class="kw">:</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">name</span><span class="kw">:</span><span class="at"> wazuh-indexer-cred</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">key</span><span class="kw">:</span><span class="at"> INDEXER_PASSWORD</span></span></code></pre></div>
+<p>兩個層級不同，很容易寫混：</p>
+<pre class="text"><code>欄位        位置
+───────────────────────────────────────────────────────────────────────
+valuesFrom  spec 層級（放進 spec.datasource 會被 strict decoding 擋下）
+targetPath  相對於 spec.datasource，所以不加 datasource. 前綴</code></pre>
+<p>寫成 <code>spec.datasource.valuesFrom</code> 還好，至少會報錯。 但
+<code>targetPath</code>
+多寫一層前綴<strong>完全不報錯</strong>，只會得到空的
+<code>basicAuthUser</code> 和 401。</p>
+<h2 id="4-靜默失敗點二bucketaggs-不能留空">4.
+靜默失敗點二：<code>bucketAggs</code> 不能留空</h2>
+<p>告警規則長這樣：</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> grafana.integreatly.org/v1beta1</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> GrafanaAlertRuleGroup</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> wazuh-high-severity</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">folderRef</span><span class="kw">:</span><span class="at"> devsecops</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">interval</span><span class="kw">:</span><span class="at"> 1m</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">rules</span><span class="kw">:</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">title</span><span class="kw">:</span><span class="at"> Wazuh 高嚴重度告警</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> C</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">data</span><span class="kw">:</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">refId</span><span class="kw">:</span><span class="at"> A</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">datasourceUid</span><span class="kw">:</span><span class="at"> wazuh-alerts</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">model</span><span class="kw">:</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">query</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;rule.level:&gt;=13&quot;</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">metrics</span><span class="kw">:</span><span class="at"> </span><span class="kw">[{</span><span class="at"> </span><span class="fu">id</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;1&quot;</span><span class="kw">,</span><span class="at"> </span><span class="fu">type</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;count&quot;</span><span class="at"> </span><span class="kw">}]</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">bucketAggs</span><span class="kw">:</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a><span class="at">              </span><span class="kw">- </span><span class="fu">id</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;2&quot;</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="at">                </span><span class="fu">type</span><span class="kw">:</span><span class="at"> date_histogram</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a><span class="at">                </span><span class="fu">field</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;@timestamp&quot;</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a><span class="at">                </span><span class="fu">settings</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> </span><span class="fu">interval</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;5m&quot;</span><span class="at"> </span><span class="kw">}</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">timeField</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;@timestamp&quot;</span></span></code></pre></div>
+<p><code>bucketAggs</code> 留空會得到：</p>
+<pre><code>invalid query, missing metrics and aggregations</code></pre>
+<p>但這個錯誤<strong>只出現在規則的 <code>health</code>
+欄位</strong>，CR 的 <code>status</code> 仍然是
+<code>ApplySuccessful</code>。看 CR 狀態會以為一切正常。</p>
+<pre class="shell"><code># 看 CR status：ApplySuccessful，沒問題
+kubectl get grafanaalertrulegroup wazuh-high-severity -n observability -o jsonpath=&#39;{.status}&#39;
+
+# 看規則的 health：這裡才看得到錯
+curl -s -u &quot;admin:$GF_PASS&quot; http://127.0.0.1:13000/api/v1/provisioning/alert-rules \
+  | jq &#39;.[] | {title, health, lastError}&#39;</code></pre>
+<h2 id="5-靜默失敗點三預設通知路由的-receiver-是-empty">5.
+靜默失敗點三：預設通知路由的 receiver 是 <code>empty</code></h2>
+<p>這是整條鏈<strong>最容易漏</strong>的一環。</p>
+<p>沒有 <code>GrafanaNotificationPolicy</code> 的話：告警照常評估、照常
+<code>state=firing</code>、面板上一片紅，<strong>但不會送到任何地方</strong>。收件匣是空的。</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> grafana.integreatly.org/v1beta1</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> GrafanaNotificationPolicy</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> default</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> observability</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">instanceSelector</span><span class="kw">:</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">dashboards</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;grafana&quot;</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">route</span><span class="kw">:</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">receiver</span><span class="kw">:</span><span class="at"> DEFAULT</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">group_by</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;alertname&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;grafana_folder&quot;</span><span class="kw">]</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">group_wait</span><span class="kw">:</span><span class="at"> 30s</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">group_interval</span><span class="kw">:</span><span class="at"> 5m</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">repeat_interval</span><span class="kw">:</span><span class="at"> 4h</span></span></code></pre></div>
+<h2 id="6-靜默失敗點四這個-cr-的欄位是-snake_case">6. 靜默失敗點四：這個
+CR 的欄位是 snake_case</h2>
+<p><code>group_by</code> / <code>group_wait</code> /
+<code>group_interval</code> / <code>repeat_interval</code>。</p>
+<p>周邊的 Grafana CR 多半是 camelCase，這裡例外。寫成
+<code>groupBy</code> 的話—— 你猜對了——不會報錯。</p>
+<hr />
+<p>四個失敗點的共同形狀：</p>
+<blockquote>
+<p><strong>「設定好了」和「生效了」之間有四道關，而四道關都用沉默表示失敗。</strong></p>
+</blockquote>
+<p>驗證只能靠端到端。本系列的做法是製造一次真實爆發，一路看到 Mailpit
+收信：</p>
+<pre class="shell"><code># 1) 觸發：特權 Pod 製造爆發
+kubectl run burst-probe --image=busybox:1.36 --restart=Never -n default \
+  --overrides=&#39;{&quot;spec&quot;:{&quot;containers&quot;:[{&quot;name&quot;:&quot;p&quot;,&quot;image&quot;:&quot;busybox:1.36&quot;,&quot;securityContext&quot;:{&quot;privileged&quot;:true},&quot;command&quot;:[&quot;sh&quot;,&quot;-c&quot;,&quot;for i in $(seq 1 40); do ls /etc/shadow; done; sleep 3&quot;]}]}}&#39;
+
+# 2) Wazuh 是否產生收斂後的告警
+kubectl exec -n kube-security wazuh-manager-worker-0 -c wazuh-manager -- \
+  sh -c &#39;grep -o &quot;\&quot;id\&quot;:\&quot;1001[23][0-9]\&quot;&quot; /var/ossec/logs/alerts/alerts.json | sort | uniq -c&#39;
+
+# 3) Grafana 規則是否 firing
+curl -s -u &quot;admin:$GF_PASS&quot; http://127.0.0.1:13000/api/prometheus/grafana/api/v1/rules \
+  | jq &#39;.data.groups[].rules[] | {name, state, health}&#39;
+
+# 4) 信真的寄出去了嗎
+curl -s http://127.0.0.1:8025/api/v1/messages | jq &#39;.messages[0] | {Subject, Created}&#39;</code></pre>
+<p><strong>只有第 4 步沒有替代品。</strong>
+前三步都有「局部看起來正常」的外觀。</p>
+<h2 id="7-告警疲勞先治本再調門檻">7. 告警疲勞：先治本，再調門檻</h2>
+<p>這一節是本文的另一個主軸，而且它是我真的把聊天室洗版之後學到的。</p>
+<h3 id="先把吵變成一個有單位的數字">先把「吵」變成一個有單位的數字</h3>
+<pre class="shell"><code>kubectl -n kube-security logs ds/falco -c falco --since=3m \
+  | grep -c &#39;&quot;priority&quot;&#39;</code></pre>
+<p>量到的結果：<strong>每分鐘約 300 則</strong>。再拆組成：</p>
+<pre class="text"><code>來源                                                           佔比
+───────────────────────────────────────────────────────────────────
+健康探針（pg_isready / ping_liveness / rabbitmq-diagnostics）  87%
+runc 觸發的 Mount in Container                                 少量
+wazuh-agent 的例行指令（netstat / last / df）                  少量
+真實事件                                                       極少</code></pre>
+<h3 id="兩層處理順序不能顛倒">兩層處理，順序不能顛倒</h3>
+<ul>
+<li><strong><strong>規則層（治本）</strong></strong>
+<ul>
+<li>做法：排除健康探針、排除 <code>runc</code>、把 wazuh-agent
+加進既有的基礎設施清單</li>
+<li>效果：1738/2000 → 3 分鐘 12 筆</li>
+</ul></li>
+<li><strong><strong>通道層</strong></strong>
+<ul>
+<li>做法：<code>minimumpriority</code> 由 <code>notice</code> 改為
+<code>critical</code></li>
+<li>效果：Warning/Error 不再進聊天室</li>
+</ul></li>
+</ul>
+<p><strong>順序不能顛倒。</strong> 只調門檻的話，噪音仍然灌進
+Loki、Wazuh 與索引，
+只是人看不到——<strong>那是把問題藏起來，不是解決。</strong>
+規則層修好之後，整條管線 的負載都下降。</p>
+<h3
+id="排除條件的寫法用指令內容不用-parent">排除條件的寫法：用指令內容，不用
+parent</h3>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_is_health_probe</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> </span><span class="ch">&gt;</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;pg_isready&quot; or</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;ping_liveness&quot; or</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;ping_readiness&quot; or</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;rabbitmq-diagnostics&quot; or</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;/health/&quot; or</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;healthcheck.sh&quot;</span></span></code></pre></div>
+<p>exec 探針由 CRI 喚起，<code>proc.pname</code>
+多半是空的，不是可靠的判別依據。 而<strong>攻擊者開一個互動 shell
+不會長得像 <code>pg_isready</code></strong>，所以比對指令字串
+反而精準。</p>
+<h3 id="通道層的分界線">通道層的分界線</h3>
+<blockquote>
+<p><strong>聊天室是「要人看的」通道。</strong></p>
+</blockquote>
+<p>高頻低特異性的訊號（shell in container、sensitive file
+read）是<strong>獵捕素材</strong>， 該留在 Loki 與 Wazuh
+供查詢，不該進通知流。</p>
+<p>代價是 Warning
+級的真實偵測不會主動通知，要靠人去查——<strong>這是刻意的取捨，
+不是遺漏</strong>。</p>
+<h3 id="刻意留窄">刻意留窄</h3>
+<p>修完後仍有約 4 筆/分的
+Warning。<strong>沒有繼續擴大排除</strong>，因為那會讓
+「有人在那個容器裡開 shell」變成盲點。4 筆/分的 Warning 不進聊天室，
+成本可接受。</p>
+<blockquote>
+<p><strong>降噪的終點不是 0。</strong>
+把真陽性一起消掉的降噪是在製造盲點。</p>
+</blockquote>
+<h3 id="關掉重複的那一條">關掉重複的那一條</h3>
+<p>Wazuh 接手判斷之後，falcosidekick 的 slack / smtp
+輸出一定要關，不然是
+雙重通知，而且形狀完全不同——<strong>一邊逐筆，一邊收斂</strong>（第 7
+篇的 133:1）。</p>
+<p>做法是把 <code>minimumpriority</code> 設為
+<code>emergency</code>——規則集裡沒有用到該等級，
+等於實質停用，但不必刪掉整段設定（將來要回復只改一個字）。WebUI 保留，
+它仍是看原始事件流的地方。</p>
+<h2 id="8-驗證要驗三件事不是兩件">8. 驗證要驗三件事，不是兩件</h2>
+<p>改門檻這種事，雙向驗證不夠，要三向：</p>
+<pre><code>1. 噪音消失   1738/2000 → 3 分鐘 12 筆，聊天室 0 筆
+2. 真陽性仍在 剩下的 12 筆是 netstat / last / df —— 同樣的規則形狀、
+              不同的指令，證明規則對非探針的 shell 依然有效
+3. 通知仍通   建立特權 Pod → Critical → 4 筆 Slack + 2 筆 SMTP</code></pre>
+<p>第 2
+項是意外的收穫：<strong>剩餘的噪音本身就是真陽性的證據</strong>，不必另外設計測試。</p>
+<p>第 3 項則是因為改了門檻，必須確認「該通知的還會通知」。</p>
+<p>驗第 3 項時我踩了一個很典型的坑：只查一個 falcosidekick 副本，看到 0
+筆就 以為通知斷了。兩個副本加總才看到 4
+筆——<strong>流量負載平衡到兩個副本，只看一個 等於只看一半。</strong></p>
+<h2 id="9-這套系統真的會抓到東西">9. 這套系統真的會抓到東西</h2>
+<p>最後講一個在驗證儀表板時撈到的真實問題，它剛好把整個系列串起來。</p>
+<p>ET Open 出現一筆不是環境噪音的命中：</p>
+<pre><code>ET INFO Outgoing Basic Auth Base64 HTTP Password detected unencrypted
+  severity 1 → Wazuh rule 100203 level 12
+  10.244.0.189 → 10.244.2.190:2802
+  Host: falco.the-one.k8s   Referer: https://falco.the-one.k8s/events/</code></pre>
+<p>是某個 WebUI。<strong>Gateway 在前面終止了 TLS，但往後端那一跳是明文
+HTTP</strong>， Basic Auth 的憑證就這樣以 base64 在叢集網路裡傳輸。</p>
+<p>為什麼只有 IDS 看得到：</p>
+<ul>
+<li>從瀏覽器看，網址列是 <code>https</code>，Referer 也是
+<code>https</code>——完全正常</li>
+<li>Falco 看不到：那是網路上的事，不是主機上的事</li>
+<li>Hubble 看得到連線，但看不到 header 裡有
+<code>Authorization: Basic</code></li>
+</ul>
+<blockquote>
+<p><strong>這正是第 1 篇說的：補一個偵測來源的價值，不是多一個告警，
+是多一種別人看不到的視角。</strong></p>
+</blockquote>
+<h2 id="10-系列總結一個人的-devsecops-能到哪裡">10. 系列總結：一個人的
+DevSecOps 能到哪裡</h2>
+<h3 id="做出來的東西">做出來的東西</h3>
+<pre><code>三個偵測來源  Falco（主機）/ K8s Audit（控制平面）/ Suricata（網路）
+兩個資料倉儲  Loki（全量，供獵捕）/ Wazuh 索引（判斷過的，供告警）
+一個判斷層    Wazuh 規則：分級、爆發收斂、抑制、MITRE 對應
+一個出口      Grafana → Zulip / Mailpit
+一層地基      Cilium CCNP default deny + 逐條放行</code></pre>
+<p>整套約 1150m CPU / 2.6 GiB，跑在一台筆電的 kind 上。</p>
+<h3 id="四條反覆出現的方法論">四條反覆出現的方法論</h3>
+<p><strong>一、把模糊的抱怨變成一個有單位的數字，解法就自己浮出來了。</strong></p>
+<ul>
+<li>「falco 部署有點久」→ <code>148 秒 vs 0.008 秒</code> → 用
+mirror</li>
+<li>「訊息轟炸」→ <code>每分鐘 300 則，87% 是健康探針</code> →
+修規則</li>
+<li>「新裝一個 IDS」→ <code>alert 佔 0.75%，其中 70% 是環境造成的</code>
+→ 三項調整</li>
+</ul>
+<p>第三個的差別是<strong>還沒有人抱怨</strong>。裝完就先量，省掉的是「噪音灌進系統幾天
+之後才回頭清」的那一段。</p>
+<p><strong>二、靜態證據不能證明動態行為。</strong></p>
+<p>這條在系列裡出現了四次，每次換一個面貌：</p>
+<pre class="text"><code>看到的                   以為        實際
+─────────────────────────────────────────────────────────
+status: ApplySuccessful  儀表板會動  只證明寫進去了
+規則載入成功             規則會觸發  可能被遮蔽
+檔案 grep 得到新內容     規則生效了  analysisd 還抱著舊的
+中間節點都健康           鏈路是通的  最後一跳沒接</code></pre>
+<blockquote>
+<p><strong>中間節點的健康狀態，不能加總成鏈路的健康狀態。</strong></p>
+</blockquote>
+<p><strong>三、量測工具自己會壞，而且不報錯。</strong></p>
+<p>系列過程中有八次判斷錯誤，全部來自「把量測工具的輸出當成事實」：</p>
+<pre class="text"><code>我看到的那一份                  不是
+──────────────────────────────────────────────
+單一副本 / 單一節點 / 單次取樣  全部
+快取的憑證                      現在
+磁碟上的設定檔                  執行中的那一份</code></pre>
+<p>空間、時間、狀態——同一個錯誤的三個面向。</p>
+<p><strong>四、與其逐一驗證假設，不如先找出一個「成功的案例」。</strong></p>
+<p>17 條規則只有 1 條會觸發時，問題從「為什麼都不觸發」變成「它和其他 16
+條
+差在哪」——後者是可回答的問題。<strong>一個能動的對照組，比五次猜測有用。</strong></p>
+<h3 id="它的極限">它的極限</h3>
+<p>誠實地說清楚這套東西做不到什麼：</p>
+<ul>
+<li><strong>沒有真人輪值。</strong>
+告警送到聊天室之後就沒有人了。這不是技術問題。</li>
+<li><strong>威脅情報是靜態的。</strong> Wazuh 的 mitre.db 止於
+2023-05，ET Open 要手動更新。</li>
+<li><strong>視野有洞。</strong> Cilium native routing 下同節點的 Pod
+互連 Suricata 看不到。</li>
+<li><strong>規則調校永遠沒有做完的一天。</strong>
+每裝一個新元件就會多一批噪音。</li>
+</ul>
+<p>但它能做到一件最重要的事：<strong>當某件事發生時，你有地方可以查，而且查得到。</strong>
+對一個人維運的環境來說，這已經足夠改變很多決策。</p>
+<h3 id="給想開始的人">給想開始的人</h3>
+<p>如果你要從頭做一次，我的建議是：</p>
+<ol type="1">
+<li><strong>不要照順序裝完再調。</strong>
+每裝一個就量一次、調一次、驗一次。</li>
+<li><strong>網路策略先上。</strong>
+它會逼你說清楚每一條連線的理由。</li>
+<li><strong>最後才接通知。</strong>
+在規則調好之前接上，只會得到一個被靜音的頻道。</li>
+<li><strong>每個坑都寫下來。</strong> 本系列的價值不在那些
+YAML，在那些「為什麼」。</li>
+</ol>
+<h2 id="小結">小結</h2>
+<ul>
+<li><strong>繞路不一定是妥協</strong>：上游不給擴充點時，先問自己真正要的是哪個維度。
+「判斷在 Wazuh」和「封包從 Wazuh 出去」是兩件事。</li>
+<li><strong>四個靜默失敗點</strong>：<code>targetPath</code> 的層級、空
+<code>bucketAggs</code> 只現於 <code>health</code>、 預設 receiver 是
+<code>empty</code>、snake_case 欄位。驗證只能靠端到端。</li>
+<li><strong>先治本再調門檻</strong>：只調門檻是把問題藏起來。而且降噪的終點不是
+0—— 把真陽性一起消掉的降噪是在製造盲點。</li>
+<li><strong>驗證要三向</strong>：噪音消失、真陽性仍在、通知仍通。只驗前兩項，你會得到一個
+很安靜但不會響的系統。</li>
+</ul>
+<hr />
+<p>寫到這裡，這套東西在我的筆電上跑了幾天，抓到一個真實的設定問題，
+也讓我對「偵測」這件事的理解從「裝工具」變成「設計訊號」。</p>
+<p>如果你也想試，所有設定都在 repo 裡。歡迎指出我寫錯的地方——這個領域
+一個人走得慢，一起走才走得遠。</p>
+<!-- series:start -->
+
+<p>系列文：</p>
+<ul>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/01-overview.md">一個人的
+DevSecOps (1)：先畫地圖，再動手</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/02-zero-trust-network.md">一個人的
+DevSecOps (2)：零信任的地基</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/03-observability.md">一個人的
+DevSecOps (3)：看得見才管得住</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/04-falco-operator.md">一個人的
+DevSecOps (4)：主機層偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/05-k8s-audit.md">一個人的
+DevSecOps (5)：控制平面偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/06-suricata.md">一個人的
+DevSecOps (6)：網路層偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/07-wazuh-brain.md">一個人的
+DevSecOps (7)：從事件到告警</a></li>
+<li><strong>一個人的 DevSecOps
+(8)：最後一哩與告警疲勞（本篇）</strong></li>
+</ul>
+<!-- series:end -->
+
+<p>想要知道更多，可參考以下資源：</p>
+<ul>
+<li><a href="https://grafana.com/docs/grafana/latest/alerting/">Grafana
+Alerting</a></li>
+<li><a
+href="https://grafana.github.io/grafana-operator/docs/api/">grafana-operator
+CRD 參考</a></li>
+<li><a
+href="https://github.com/falcosecurity/falcosidekick">Falcosidekick</a></li>
+<li><a
+href="https://sre.google/sre-book/monitoring-distributed-systems/">Alert
+Fatigue（SRE Book: Monitoring Distributed Systems）</a></li>
+</ul>
+</body>
+</html>

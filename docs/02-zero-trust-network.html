@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>02-zero-trust-network</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">02-zero-trust-network</h1>
+</header>
+<h1 id="一個人的-devsecops-2零信任的地基">一個人的 DevSecOps
+(2)：零信任的地基</h1>
+<h2 id="背景說明">背景說明</h2>
+<p>上一篇畫完地圖，這一篇先把地基打好：<strong>在任何應用進來之前，先讓叢集預設拒絕
+所有流量。</strong></p>
+<p>這個順序常被倒過來做。一般的習慣是先把東西裝起來、確認會動，最後再補
+NetworkPolicy —— 結果是每補一條就要回頭查一次「為什麼它連不到了」，而且
+你永遠不確定自己是不是補完了。</p>
+<p>反過來做的成本其實更低：default deny
+先立起來，之後每裝一個元件就補一條
+放行，<strong>而每一條放行都是你親手寫的、有理由的</strong>。到最後你會有一份完整描述
+「誰可以跟誰說話」的清單，那份清單本身就是資產。</p>
+<p>本文用 Cilium 的
+<code>CiliumClusterwideNetworkPolicy</code>（以下簡稱 CCNP），
+並且會示範四個會讓策略<strong>靜默失效</strong>的坑 ——
+它們的共同點是不會報錯。</p>
+<h2 id="環境必須">環境必須</h2>
+<ol type="1">
+<li>已依第 1 篇建立好 kind
+叢集（<code>disableDefaultCNI: true</code>）</li>
+<li><code>helm</code>、<code>kubectl</code>、<code>cilium</code>
+CLI（選用）</li>
+</ol>
+<h2 id="1-安裝-cilium">1. 安裝 Cilium</h2>
+<pre class="shell"><code>helm upgrade --install cilium -n kube-system \
+  --repo https://helm.cilium.io cilium --version 1.20.2 \
+  --set kubeProxyReplacement=true \
+  --set k8sServiceHost=the-one-control-plane \
+  --set k8sServicePort=6443 \
+  --set hubble.relay.enabled=true \
+  --set hubble.ui.enabled=true \
+  --set gatewayAPI.enabled=true</code></pre>
+<p>等它起來：</p>
+<pre class="shell"><code>kubectl -n kube-system rollout status ds/cilium</code></pre>
+<h2 id="2-為什麼不用-vanilla-networkpolicy">2. 為什麼不用 vanilla
+NetworkPolicy</h2>
+<p>標準的 <code>NetworkPolicy</code>
+能做的事，本系列有一半做不到。下表是實際用到的 Cilium
+專屬能力，以及它們各自解決什麼問題：</p>
+<ul>
+<li><strong><code>egressDeny</code></strong> —
+<strong>顯式拒絕</strong>，優先於所有
+allow。即使日後有人寫了寬鬆放行也擋得住</li>
+<li><strong><code>toEntities: kube-apiserver</code></strong> — 不必寫死
+ClusterIP，HA 叢集下也不會漏</li>
+<li><strong><code>fromEntities: ingress</code></strong> — Gateway
+轉發進來的流量不屬於任何 Pod，選不到</li>
+<li><strong><code>fromEntities: host, remote-node</code></strong> — 稽核
+webhook 的來源是<strong>節點</strong>不是 Pod</li>
+<li><strong><code>toFQDNs</code></strong> — CDN 的 IP
+會變，只能用網域名稱</li>
+<li><strong><code>enableDefaultDeny: false</code></strong> —
+讓放行策略可以先單獨上線，不會順手把端點推進 deny</li>
+</ul>
+<p>vanilla <code>NetworkPolicy</code> 只有 allow，沒有
+deny。「預設拒絕」是靠「沒有任何 allow」間接達成的 ——
+那表示<strong>任何一條寬鬆的放行都能繞過你的所有設計</strong>。
+<code>egressDeny</code> 讓你可以畫出一條沒有人能跨過的紅線。</p>
+<h2 id="3-編號即套用順序">3. 編號即套用順序</h2>
+<p>目錄長這樣：</p>
+<pre><code>manifests/ccnp/
+├── 10-infra-baseline.yaml      # DNS (含 L7 proxy)、API Server 雙向、Gateway 轉發
+├── 20-deny-metadata-api.yaml   # 顯式拒絕雲端 metadata endpoint
+├── 30-kube-security-egress.yaml
+├── ...
+└── 99-default-deny.yaml        # 全叢集 default deny</code></pre>
+<p><strong>放行先上、<code>default-deny</code>
+最後</strong>，所以整個目錄一起套用是安全的：</p>
+<pre class="shell"><code>kubectl apply -f manifests/ccnp/</code></pre>
+<p>十位數編號留了插入空間，新增應用層策略從 70 開始。</p>
+<p>這個約定看起來很小，但它讓「重建環境」這件事從一連串需要記憶的步驟
+變成一行指令。一個人維運的時候，<strong>能寫進檔名的約定就不要寫進腦袋</strong>。</p>
+<h2 id="4-第一個坑notin-在標籤不存在時也成立">4.
+第一個坑：<code>NotIn</code> 在標籤不存在時也成立</h2>
+<p>先看 default deny 本身。直覺的寫法是選中所有 endpoint：</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">endpointSelector</span><span class="kw">:</span><span class="at"> </span><span class="kw">{}</span></span></code></pre></div>
+<p>這會讓叢集當場癱瘓 —— CoreDNS、Cilium 自己、API Server proxy 全被擋。
+所以要排除系統 namespace：</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">endpointSelector</span><span class="kw">:</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">matchExpressions</span><span class="kw">:</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">key</span><span class="kw">:</span><span class="at"> k8s:io.kubernetes.pod.namespace</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">operator</span><span class="kw">:</span><span class="at"> NotIn</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">values</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">kube-system</span><span class="kw">,</span><span class="at"> kube-public</span><span class="kw">,</span><span class="at"> kube-node-lease</span><span class="kw">]</span></span></code></pre></div>
+<p>看起來很合理，但<strong>這樣寫是錯的</strong>。</p>
+<p>Kubernetes 的 <code>NotIn</code> 在「標籤不存在」時也成立。Cilium
+有一組保留 endpoint 沒有 namespace 標籤：</p>
+<pre class="text"><code>保留 endpoint     被擋的後果
+─────────────────────────────────────────────────────────
+reserved:health   節點間健康檢查失效
+reserved:ingress  Gateway / Ingress 流量被擋
+reserved:init     Pod 初始化期間網路被擋 → 偶發的啟動失敗</code></pre>
+<p>最後那個最難查：它不是每次都發生，而且錯誤訊息完全看不出跟網路策略有關。</p>
+<p>正確寫法是 <code>Exists</code> 與 <code>NotIn</code> 並用：</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> cilium.io/v2</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> CiliumClusterwideNetworkPolicy</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ccnp-default-deny</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">description</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;Deny all ingress and egress except system namespaces&quot;</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">endpointSelector</span><span class="kw">:</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">matchExpressions</span><span class="kw">:</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="co"># 這條不能省，理由見上</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">key</span><span class="kw">:</span><span class="at"> k8s:io.kubernetes.pod.namespace</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">operator</span><span class="kw">:</span><span class="at"> Exists</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">key</span><span class="kw">:</span><span class="at"> k8s:io.kubernetes.pod.namespace</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">operator</span><span class="kw">:</span><span class="at"> NotIn</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">values</span><span class="kw">:</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="kw">- </span><span class="at">kube-system</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="kw">- </span><span class="at">kube-public</span></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="kw">- </span><span class="at">kube-node-lease</span></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="kw">- </span><span class="at">cilium-secrets</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="kw">- </span><span class="at">local-path-storage</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># 顯式寫出來，不依賴「空 rule」的隱含語意 ——</span></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># 有人整理 YAML 時刪掉 `- {}`，整條策略會靜默失效</span></span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enableDefaultDeny</span><span class="kw">:</span></span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ingress</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">egress</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ingress</span><span class="kw">:</span></span>
+<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- {}</span></span>
+<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">egress</span><span class="kw">:</span></span>
+<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- {}</span></span></code></pre></div>
+<p>兩個方向都給空的允許清單，就等於全拒。</p>
+<h2 id="5-第二個坑egressdeny-會觸發-default-deny">5.
+第二個坑：<code>egressDeny</code> 會觸發 default deny</h2>
+<p>接著畫紅線。雲端的 metadata
+endpoint（<code>169.254.169.254</code>）是 SSRF 攻擊的 經典目標，對應
+MITRE 的 T1190。這條在 vanilla NetworkPolicy 裡做不到：</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> cilium.io/v2</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> CiliumClusterwideNetworkPolicy</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ccnp-deny-metadata-api</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">description</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;Block access to cloud metadata endpoints&quot;</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">endpointSelector</span><span class="kw">:</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">matchExpressions</span><span class="kw">:</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">key</span><span class="kw">:</span><span class="at"> k8s:io.kubernetes.pod.namespace</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">operator</span><span class="kw">:</span><span class="at"> Exists</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">key</span><span class="kw">:</span><span class="at"> k8s:io.kubernetes.pod.namespace</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">operator</span><span class="kw">:</span><span class="at"> NotIn</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">values</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">kube-system</span><span class="kw">]</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># 這兩行不能省，理由見下</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enableDefaultDeny</span><span class="kw">:</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ingress</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">egress</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">egressDeny</span><span class="kw">:</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">toCIDR</span><span class="kw">:</span></span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">169.254.169.254/32</span></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">169.254.170.2/32   # ECS task metadata</span></span></code></pre></div>
+<p><code>enableDefaultDeny</code> 那兩行是第二個坑。依 CRD
+的定義，<strong>「某方向有規則時， 該方向的 default deny 預設為
+true」</strong>，而 <code>egressDeny</code> 算 egress 方向的規則。</p>
+<p>也就是說：一條純粹的「拒絕」策略，如果不明確把 default deny 關掉，
+會順帶把<strong>被它選中的所有端點</strong>推進 egress
+default-deny。你以為只擋了一個 IP，實際上擋掉了全部。</p>
+<p>這條策略在整個架構裡的角色也值得一提：<strong>偵測與預防的分工。</strong>
+Falco 會在有人嘗試連 metadata API 時告訴你（看見），這條 CCNP 讓他連不上
+（擋住）。兩者都要有 ——
+只有偵測你會來不及，只有預防你不知道有人在試。</p>
+<h2 id="6-第三個坑l4-的-dns-放行會壓過-l7">6. 第三個坑：L4 的 DNS
+放行會壓過 L7</h2>
+<p><code>toFQDNs</code> 是很好用的能力：你可以寫「允許連到
+<code>ghcr.io</code>」而不必追著 CDN 的 IP 跑。它的運作方式是 Cilium
+攔截 DNS 查詢、記下回應的 IP，再據此放行。</p>
+<p>前提是 <strong>DNS 必須走 Cilium 的 L7
+proxy</strong>。而這裡有個陷阱：</p>
+<blockquote>
+<p>同一段流量同時有 L4-only 與 L7 放行時，Cilium
+取<strong>較寬鬆</strong>者。</p>
+</blockquote>
+<p>所以如果你在某個 namespace 的策略裡順手寫了一條「允許 UDP/53 到
+CoreDNS」， 那段 DNS 就繞過 proxy 了，<code>toFQDNs</code> 永遠學不到
+IP，結果是出網規則全部失效 ——
+<strong>而且沒有任何錯誤訊息</strong>，你只會看到
+<code>i/o timeout</code>。</p>
+<p>解法是約定：<strong>DNS 只在 <code>10-infra-baseline.yaml</code>
+宣告一次，別處不准再寫。</strong></p>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">egress</span><span class="kw">:</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">toEndpoints</span><span class="kw">:</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">k8s:io.kubernetes.pod.namespace</span><span class="kw">:</span><span class="at"> kube-system</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">k8s:k8s-app</span><span class="kw">:</span><span class="at"> kube-dns</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">toPorts</span><span class="kw">:</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="kw">- </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;53&quot;</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="at">              </span><span class="fu">protocol</span><span class="kw">:</span><span class="at"> ANY</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">rules</span><span class="kw">:</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">dns</span><span class="kw">:</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="at">              </span><span class="kw">- </span><span class="fu">matchPattern</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;*&quot;</span></span></code></pre></div>
+<h2 id="7-第四個坑gateway-這一跳在策略上是透明的">7. 第四個坑：Gateway
+這一跳在策略上是透明的</h2>
+<p>這個坑花掉我最多時間。</p>
+<p>場景：某個 Pod 要連到另一個服務，中間走 Cilium
+Gateway。直覺是「放行到 Gateway
+就好」，但實際上怎麼寫都不通。實測過的無效寫法：</p>
+<ul>
+<li><code>toEntities: ingress</code></li>
+<li><code>toServices</code> 指向 Gateway 的 Service</li>
+<li><code>toCIDR</code> 哨兵位址（<code>192.192.192.192</code>）</li>
+</ul>
+<p>原因是 <strong>Cilium Gateway 代替客戶端執行「客戶端 →
+後端」的策略檢查</strong>。
+在策略的眼中，那一跳不存在；要放行的是<strong>真正的目的地</strong>。</p>
+<p>結論很簡潔：<strong>走 Gateway 省不掉任何策略。</strong>
+既然如此，內部通訊就直接指向 Service，不必繞 Gateway。</p>
+<h2 id="8-一條連線要放行兩次">8. 一條連線要放行兩次</h2>
+<p>最後一個觀念，它不是坑，是設計上的必然，但初期很容易漏。</p>
+<p>default deny
+同時擋進與出，所以<strong>每條連線都要在兩個地方各放行一次</strong>：</p>
+<pre><code>來源端的 egress  ─→  目的端的 ingress</code></pre>
+<p>只寫一邊的症狀跟完全沒寫一樣 ——
+<code>i/o timeout</code>，而且看不出少了哪半邊。</p>
+<p>所以本系列裡凡是跨 namespace 的連線，策略都是成對出現的。例如 Loki
+要存取 SeaweedFS 的 S3 介面：</p>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="co"># 來源端：Loki 可以連出去</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> cilium.io/v2</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> CiliumClusterwideNetworkPolicy</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ccnp-loki-to-seaweedfs</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">endpointSelector</span><span class="kw">:</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">k8s:io.kubernetes.pod.namespace</span><span class="kw">:</span><span class="at"> observability</span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">k8s:app.kubernetes.io/name</span><span class="kw">:</span><span class="at"> loki</span></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enableDefaultDeny</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> </span><span class="fu">ingress</span><span class="kw">:</span><span class="fu"> </span><span class="ch">false</span><span class="kw">,</span><span class="at"> </span><span class="fu">egress</span><span class="kw">:</span><span class="fu"> </span><span class="ch">false</span><span class="at"> </span><span class="kw">}</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">egress</span><span class="kw">:</span></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">toEndpoints</span><span class="kw">:</span></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">k8s:io.kubernetes.pod.namespace</span><span class="kw">:</span><span class="at"> seaweedfs</span></span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">k8s:app.kubernetes.io/component</span><span class="kw">:</span><span class="at"> s3</span></span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">toPorts</span><span class="kw">:</span></span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">ports</span><span class="kw">:</span><span class="at"> </span><span class="kw">[{</span><span class="at"> </span><span class="fu">port</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;8333&quot;</span><span class="kw">,</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="fu"> </span><span class="at">TCP </span><span class="kw">}]</span></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a><span class="co"># 目的端：SeaweedFS 接受 Loki 連入</span></span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> cilium.io/v2</span></span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> CiliumClusterwideNetworkPolicy</span></span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ccnp-seaweedfs-from-loki</span></span>
+<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">endpointSelector</span><span class="kw">:</span></span>
+<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
+<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">k8s:io.kubernetes.pod.namespace</span><span class="kw">:</span><span class="at"> seaweedfs</span></span>
+<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">k8s:app.kubernetes.io/component</span><span class="kw">:</span><span class="at"> s3</span></span>
+<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enableDefaultDeny</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> </span><span class="fu">ingress</span><span class="kw">:</span><span class="fu"> </span><span class="ch">false</span><span class="kw">,</span><span class="at"> </span><span class="fu">egress</span><span class="kw">:</span><span class="fu"> </span><span class="ch">false</span><span class="at"> </span><span class="kw">}</span></span>
+<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ingress</span><span class="kw">:</span></span>
+<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">fromEndpoints</span><span class="kw">:</span></span>
+<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
+<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">k8s:io.kubernetes.pod.namespace</span><span class="kw">:</span><span class="at"> observability</span></span>
+<span id="cb12-36"><a href="#cb12-36" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">k8s:app.kubernetes.io/name</span><span class="kw">:</span><span class="at"> loki</span></span></code></pre></div>
+<p>寫起來囉嗦，但它強迫你每次都說清楚「誰連誰」，而這正是零信任的重點。</p>
+<h2 id="9-驗證">9. 驗證</h2>
+<p>套用之後，先確認策略有被接受：</p>
+<pre class="shell"><code>kubectl get ccnp</code></pre>
+<p>接著做一次負面測試 —— 開一個不在任何放行清單裡的
+Pod，確認它連不出去：</p>
+<pre class="shell"><code>kubectl run netcheck --image=busybox:1.36 --restart=Never -n default \
+  --command -- sh -c &#39;wget -T 3 -qO- http://example.com; echo &quot;exit=$?&quot;&#39;</code></pre>
+<p>預期是逾時。如果它成功了，表示 default deny 沒生效 —— 多半是
+<code>endpointSelector</code> 漏了 <code>Exists</code>，或是某條策略的
+<code>enableDefaultDeny</code> 把方向關掉了。</p>
+<p>最後，Hubble 是查策略問題最快的工具：</p>
+<pre class="shell"><code>cilium hubble port-forward &amp;
+hubble observe --verdict DROPPED --last 50</code></pre>
+<p>它會直接告訴你哪一條流量被哪個方向擋掉。<strong>查 CCNP 不要用
+<code>kubectl logs</code>， 要用 Hubble。</strong></p>
+<h2 id="小結">小結</h2>
+<ul>
+<li><strong>網路策略要先於應用部署</strong>：倒過來做的話，每裝一個元件就要回頭
+debug 一次， 而且永遠不確定補完了沒。先 deny
+再逐條放行，最後會得到一份完整的 「誰可以跟誰說話」清單。</li>
+<li><strong>四個坑的共同點是不報錯</strong>：<code>NotIn</code> 少了
+<code>Exists</code>、<code>egressDeny</code> 沒關 default deny、L4 DNS
+壓過 L7、Gateway 在策略上透明 —— 四個都是「設定存在、
+看起來正常、就是不會動」。查這類問題要用 Hubble 看
+verdict，不要看日誌。</li>
+<li><strong>一條連線放行兩次</strong>：來源端 egress 與目的端 ingress
+缺一不可，只寫一邊的 症狀與完全沒寫相同。</li>
+</ul>
+<p>下一篇把可觀測性立起來 —— 在偵測工具進來之前，要先有地方放資料。</p>
+<!-- series:start -->
+
+<p>系列文：</p>
+<ul>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/01-overview.md">一個人的
+DevSecOps (1)：先畫地圖，再動手</a></li>
+<li><strong>一個人的 DevSecOps (2)：零信任的地基（本篇）</strong></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/03-observability.md">一個人的
+DevSecOps (3)：看得見才管得住</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/04-falco-operator.md">一個人的
+DevSecOps (4)：主機層偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/05-k8s-audit.md">一個人的
+DevSecOps (5)：控制平面偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/06-suricata.md">一個人的
+DevSecOps (6)：網路層偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/07-wazuh-brain.md">一個人的
+DevSecOps (7)：從事件到告警</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/08-alerting-and-fatigue.md">一個人的
+DevSecOps (8)：最後一哩與告警疲勞</a></li>
+</ul>
+<!-- series:end -->
+
+<p>想要知道更多，可參考以下資源：</p>
+<ul>
+<li><a href="https://docs.cilium.io/en/stable/security/policy/">Cilium
+Network Policy</a></li>
+<li><a
+href="https://docs.cilium.io/en/stable/network/kubernetes/policy/#ciliumclusterwidenetworkpolicy">CiliumClusterwideNetworkPolicy</a></li>
+<li><a
+href="https://docs.cilium.io/en/stable/observability/hubble/">Hubble</a></li>
+<li><a href="https://attack.mitre.org/techniques/T1190/">MITRE
+ATT&amp;CK T1190</a></li>
+</ul>
+</body>
+</html>

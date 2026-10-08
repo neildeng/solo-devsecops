@@ -30,6 +30,19 @@
 產出在 `build/medium/*.html`（不進版控）。用瀏覽器開啟 → 全選 → 複製 →
 貼進 Medium 的空白草稿。第一個大標題會成為文章標題。
 
+### 或者用 Medium 的 import
+
+`docs/` 是同一份轉檔結果，由 GitHub Pages 公開在
+<https://neildeng.github.io/solo-devsecops/>。把單篇的網址丟進
+<https://medium.com/p/import>，Medium 會自己抓內容、轉格式、上傳圖片 ——
+通常比手動貼上乾淨。
+
+**改完 Markdown 要記得重新產生 `docs/` 再 commit**，否則 Pages 上是舊的：
+
+```shell
+./articles/to-medium.py --out docs --index
+```
+
 轉檔時處理了四件 Medium 做不到的事：
 
 | 問題 | 處理方式 |

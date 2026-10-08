@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>07-wazuh-brain</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">07-wazuh-brain</h1>
+</header>
+<h1 id="一個人的-devsecops-7從事件到告警">一個人的 DevSecOps
+(7)：從事件到告警</h1>
+<h2 id="背景說明">背景說明</h2>
+<p>到這裡三個偵測來源都有了，而且都在往 Loki
+送。看起來很完整，但有一個根本 的問題還沒解決：</p>
+<blockquote>
+<p><strong>「事件」不是「告警」。</strong></p>
+</blockquote>
+<p>Falco 每分鐘產生上百筆事件，Suricata 的 eve.json 一天 1.2
+GB。如果把這些 直接接到聊天室，得到的不是一個
+SOC，是一個沒有人會看的頻道。</p>
+<p>中間缺的是一個<strong>判斷層</strong>：誰負責說「這一批事件合起來是一件值得你知道的事」。
+本系列用 Wazuh 來做這件事。</p>
+<p>本文的主軸是：<strong>「告警大腦」的腦在規則層，不在輸出通道。</strong>
+我一開始把這兩件 事混在一起，差點走上一條代價很高的路。</p>
+<h2 id="環境必須">環境必須</h2>
+<ol type="1">
+<li>已完成第 4、5、6 篇（三個偵測來源）</li>
+<li>叢集至少還有 <strong>1150m CPU / 2.6 GiB</strong> 的餘裕（見第 1
+篇的資源盤算）</li>
+</ol>
+<h2 id="1-縮編版-wazuh">1. 縮編版 Wazuh</h2>
+<p>chart 預設要 3700m CPU / 5.2 GiB，單機 kind 吃不下。縮編：</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">indexer</span><span class="kw">:</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">replicas</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">requests</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> </span><span class="fu">cpu</span><span class="kw">:</span><span class="fu"> </span><span class="at">200m</span><span class="kw">,</span><span class="at"> </span><span class="fu">memory</span><span class="kw">:</span><span class="fu"> </span><span class="at">1Gi </span><span class="kw">}</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">persistence</span><span class="kw">:</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">size</span><span class="kw">:</span><span class="at"> 10Gi</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">extraEnvs</span><span class="kw">:</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> OPENSEARCH_JAVA_OPTS</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">value</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;-Xms768m -Xmx768m&quot;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="fu">manager</span><span class="kw">:</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">worker</span><span class="kw">:</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">replicas</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">master</span><span class="kw">:</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">persistence</span><span class="kw">:</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">size</span><span class="kw">:</span><span class="at"> 10Gi</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="co"># 索引保留全量，但不另外存一份純文字檔</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="fu">archives</span><span class="kw">:</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div>
+<pre class="shell"><code>helm upgrade --install wazuh -n kube-security \
+  --repo https://morgoved.github.io/wazuh-helm wazuh --version 2.0.7 \
+  -f ./values/wazuh.yaml</code></pre>
+<h2 id="2-用-syslog不用-agent">2. 用 syslog，不用 agent</h2>
+<p>Wazuh 的標準做法是在每個節點裝
+agent。但本系列已經有一個蒐集層了（Alloy）， 再裝一個 agent
+等於兩套蒐集邏輯、兩份 positions、兩個要維護的東西。</p>
+<p>所以走 syslog：<strong>Alloy 把事件以 RFC3164 syslog 送進 Wazuh
+manager 的 514。</strong></p>
+<pre><code>Falco / Suricata ──→ Alloy ──→ syslog(514) ──→ Wazuh worker</code></pre>
+<h3 id="第一個坑必須是-rfc3164不能是-rfc5424">第一個坑：必須是
+RFC3164，不能是 RFC5424</h3>
+<p>實測的差異：</p>
+<ul>
+<li><strong>RFC5424</strong> — 只剝掉 <code>&lt;134&gt;</code>，表頭
+<code>1 ... alloy falco - - -</code> 留在訊息裡，decoder
+無從掛載，事件掉進兜底規則 1002</li>
+<li><strong>RFC3164</strong> — 正確取出 <code>program_name</code> /
+<code>hostname</code> / <code>timestamp</code></li>
+</ul>
+<h3
+id="第二個坑syslog-exporter-從屬性組訊息不會用-otel-的-body">第二個坑：syslog
+exporter 從屬性組訊息，不會用 OTel 的 Body</h3>
+<p>這一行少了不會報錯，Wazuh 也完全收不到：</p>
+<pre class="river"><code>otelcol.processor.transform &quot;falco_syslog&quot; {
+  error_mode = &quot;ignore&quot;
+  log_statements {
+    context    = &quot;log&quot;
+    statements = [
+      // appname → Wazuh 的 program_name，decoder 靠它掛載
+      `set(attributes[&quot;appname&quot;], &quot;falco&quot;)`,
+      `set(attributes[&quot;hostname&quot;], &quot;alloy&quot;)`,
+      // 少了這行不會報錯，Wazuh 也完全收不到
+      `set(attributes[&quot;message&quot;], body)`,
+    ]
+  }
+  output { logs = [otelcol.exporter.syslog.wazuh.input] }
+}
+
+otelcol.exporter.syslog &quot;wazuh&quot; {
+  // 只能是 worker：syslog 的 &lt;remote&gt; 區塊只在 worker.conf
+  endpoint = &quot;wazuh-manager-worker.kube-security.svc.cluster.local&quot;
+  port     = 514
+  network  = &quot;tcp&quot;
+  protocol = &quot;rfc3164&quot;
+  tls { insecure = true }
+}</code></pre>
+<h3 id="第三個坑容器日誌是-cri-格式不是純-json">第三個坑：容器日誌是 CRI
+格式，不是純 JSON</h3>
+<p>磁碟上的 Falco 日誌長這樣：</p>
+<pre><code>2026-10-07T00:51:19Z stdout F {&quot;hostname&quot;:...}</code></pre>
+<p>前面那一段不剝掉的話，Wazuh 的 <code>JSON_Decoder</code>
+解不出欄位：</p>
+<pre class="river"><code>loki.process &quot;falco_cri&quot; {
+  stage.cri {}
+  forward_to = [otelcol.receiver.loki.falco_bridge.receiver]
+}</code></pre>
+<h2 id="3-分流原則loki-收全量wazuh-收需要判斷的">3. 分流原則：Loki
+收全量，Wazuh 收需要判斷的</h2>
+<p>Suricata 那條管線示範了這個原則。<strong>只送
+<code>event_type: alert</code>：</strong></p>
+<pre class="river"><code>loki.process &quot;suricata_alerts&quot; {
+  // 第一關：濾掉 fast.log 與 audit log
+  stage.match {
+    selector = `{component!=&quot;eve&quot;}`
+    action   = &quot;drop&quot;
+  }
+
+  stage.json { expressions = { event_type = &quot;event_type&quot; } }
+
+  // 第二關：只留 alert。stage.drop 是「命中就丟」，沒有反向的 keep，
+  // 所以列舉要丟的種類
+  stage.drop {
+    source              = &quot;event_type&quot;
+    expression          = &quot;^(http|dns|tls|ssh|flow|stats|fileinfo|anomaly)$&quot;
+    drop_counter_reason = &quot;suricata_not_alert&quot;
+  }
+
+  forward_to = [otelcol.receiver.loki.suricata_bridge.receiver]
+}</code></pre>
+<p>三個東西各自有不送的理由：</p>
+<ul>
+<li><strong><code>fast.log</code></strong> — 與 eve.json 的 alert
+是同一批事件的兩種格式，送兩次等於每個告警出現兩次</li>
+<li><strong>audit log</strong> — 已由 Falco 的 k8saudit plugin 覆蓋</li>
+<li><strong>其他 event_type</strong> — 是脈絡不是告警。實測 alert 只佔
+0.75%，整份送進去等於要 Wazuh 為 <strong>133
+倍</strong>的資料量做規則比對</li>
+</ul>
+<h2 id="4-decoder-與分級">4. decoder 與分級</h2>
+<p>Wazuh 的規則掛在 decoder 上，而 decoder 靠 <code>program_name</code>
+掛載：</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">decoder</span> <span class="ot">name=</span><span class="st">&quot;falco&quot;</span>&gt;</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">program_name</span>&gt;^falco$&lt;/<span class="kw">program_name</span>&gt;</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">decoder</span>&gt;</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">decoder</span> <span class="ot">name=</span><span class="st">&quot;falco-json&quot;</span>&gt;</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">parent</span>&gt;falco&lt;/<span class="kw">parent</span>&gt;</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">plugin_decoder</span>&gt;JSON_Decoder&lt;/<span class="kw">plugin_decoder</span>&gt;</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">decoder</span>&gt;</span></code></pre></div>
+<p>規則分成兩層：<strong>level 0
+只分類不告警，上面再疊分級規則。</strong></p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co">&lt;!-- level 0：只負責解碼與分類，避免每筆事件都是噪音 --&gt;</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100100&quot;</span> <span class="ot">level=</span><span class="st">&quot;0&quot;</span>&gt;</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">decoded_as</span>&gt;falco&lt;/<span class="kw">decoded_as</span>&gt;</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Falco: 事件已解碼&lt;/<span class="kw">description</span>&gt;</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100110&quot;</span> <span class="ot">level=</span><span class="st">&quot;12&quot;</span>&gt;</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_sid</span>&gt;100100&lt;/<span class="kw">if_sid</span>&gt;</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">field</span> <span class="ot">name=</span><span class="st">&quot;priority&quot;</span>&gt;^Critical$&lt;/<span class="kw">field</span>&gt;</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Falco Critical: $(rule)&lt;/<span class="kw">description</span>&gt;</span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">mitre</span>&gt;&lt;<span class="kw">id</span>&gt;T1562.001&lt;/<span class="kw">id</span>&gt;&lt;/<span class="kw">mitre</span>&gt;</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span></code></pre></div>
+<h3 id="內建支援不等於可用支援">內建支援不等於可用支援</h3>
+<p>Suricata 的部分有個意外。Wazuh <strong>內建</strong>了
+<code>0475-suricata_rules.xml</code>，看到的
+當下覺得省事。打開來看：</p>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;86601&quot;</span> <span class="ot">level=</span><span class="st">&quot;3&quot;</span>&gt;</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_sid</span>&gt;86600&lt;/<span class="kw">if_sid</span>&gt;</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">field</span> <span class="ot">name=</span><span class="st">&quot;event_type&quot;</span>&gt;^alert$&lt;/<span class="kw">field</span>&gt;</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Suricata: Alert - $(alert.signature)&lt;/<span class="kw">description</span>&gt;</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span></code></pre></div>
+<p><strong>每一筆 Suricata alert 一律 level 3，不分 severity 也不分
+category。</strong> 在「level ≥ 13 才通知」的架構下，這等於 Suricata
+永遠不會告警——53000 條 ET Open 規則，從 ICMP 測試到 CVE
+利用嘗試，全部同一個等級。</p>
+<p>所以自己寫一組。意外的好處是不會衝突：經 syslog 進來的事件會先掛上
+<code>program_name</code> 的 decoder，不是裸 json，所以內建的 86600
+（<code>decoded_as json</code>）本來就不會觸發。</p>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">decoder</span> <span class="ot">name=</span><span class="st">&quot;suricata-syslog&quot;</span>&gt;</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">program_name</span>&gt;^suricata$&lt;/<span class="kw">program_name</span>&gt;</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">decoder</span>&gt;</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">decoder</span> <span class="ot">name=</span><span class="st">&quot;suricata-syslog-json&quot;</span>&gt;</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">parent</span>&gt;suricata-syslog&lt;/<span class="kw">parent</span>&gt;</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">plugin_decoder</span>&gt;JSON_Decoder&lt;/<span class="kw">plugin_decoder</span>&gt;</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">decoder</span>&gt;</span></code></pre></div>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100201&quot;</span> <span class="ot">level=</span><span class="st">&quot;3&quot;</span>&gt;</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_sid</span>&gt;100200&lt;/<span class="kw">if_sid</span>&gt;</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">field</span> <span class="ot">name=</span><span class="st">&quot;event_type&quot;</span>&gt;^alert$&lt;/<span class="kw">field</span>&gt;</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Suricata: $(alert.signature) [$(src_ip) -&gt; $(dest_ip)]&lt;/<span class="kw">description</span>&gt;</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="co">&lt;!-- 以 classtype 分級優先於 severity --&gt;</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100202&quot;</span> <span class="ot">level=</span><span class="st">&quot;12&quot;</span>&gt;</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_sid</span>&gt;100201&lt;/<span class="kw">if_sid</span>&gt;</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">field</span> <span class="ot">name=</span><span class="st">&quot;alert.category&quot;</span>&gt;Privilege Gain|Trojan|Malware|Exploit|Shellcode|Web Application Attack|Command and Control&lt;/<span class="kw">field</span>&gt;</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Suricata 高危特徵: $(alert.signature)&lt;/<span class="kw">description</span>&gt;</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">mitre</span>&gt;&lt;<span class="kw">id</span>&gt;T1071&lt;/<span class="kw">id</span>&gt;&lt;/<span class="kw">mitre</span>&gt;</span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100203&quot;</span> <span class="ot">level=</span><span class="st">&quot;12&quot;</span>&gt;</span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_sid</span>&gt;100201&lt;/<span class="kw">if_sid</span>&gt;</span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">field</span> <span class="ot">name=</span><span class="st">&quot;alert.severity&quot;</span>&gt;^1$&lt;/<span class="kw">field</span>&gt;</span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Suricata 高優先級: $(alert.signature)&lt;/<span class="kw">description</span>&gt;</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span></code></pre></div>
+<p><strong>為什麼 classtype 優先於 severity</strong>：ET Open 的
+severity 是由 classtype 推導出來的，但自訂規則常常漏寫
+<code>priority</code> 而一律落在 3（第 6 篇我自己的
+<code>sid 1000001</code> 就是），classtype
+則是寫規則時幾乎一定會填的欄位。</p>
+<h2 id="5-核心爆發收斂">5. 核心：爆發收斂</h2>
+<p>這才是「Wazuh 當告警大腦」真正的意思。</p>
+<blockquote>
+<p><strong>索引保留全量供獵捕，通知只給「事件」而不是「每一筆紀錄」。</strong></p>
+</blockquote>
+<p>level 12
+的規則維持不變、繼續進索引，但<strong>不該是通知的對象</strong>——一次攻擊會
+產生幾十上百筆，逐筆通知就是告警疲勞的來源。</p>
+<div class="sourceCode" id="cb13"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co">&lt;!-- 同一條規則短時間內重複：收斂成一則 --&gt;</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100130&quot;</span> <span class="ot">level=</span><span class="st">&quot;13&quot;</span> <span class="ot">frequency=</span><span class="st">&quot;8&quot;</span> <span class="ot">timeframe=</span><span class="st">&quot;60&quot;</span> <span class="ot">ignore=</span><span class="st">&quot;300&quot;</span>&gt;</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_matched_sid</span>&gt;100110&lt;/<span class="kw">if_matched_sid</span>&gt;</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">same_field</span>&gt;data.rule&lt;/<span class="kw">same_field</span>&gt;</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Falco 事件爆發: $(data.rule) 於 60 秒內觸發 8 次以上&lt;/<span class="kw">description</span>&gt;</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="co">&lt;!-- audit 事件的頻率天然低於 syscall，門檻要跟著調低，</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="co">     否則永遠達不到而形同虛設 --&gt;</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100131&quot;</span> <span class="ot">level=</span><span class="st">&quot;13&quot;</span> <span class="ot">frequency=</span><span class="st">&quot;5&quot;</span> <span class="ot">timeframe=</span><span class="st">&quot;120&quot;</span> <span class="ot">ignore=</span><span class="st">&quot;300&quot;</span>&gt;</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_matched_sid</span>&gt;100125&lt;/<span class="kw">if_matched_sid</span>&gt;</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">same_field</span>&gt;data.rule&lt;/<span class="kw">same_field</span>&gt;</span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a><span class="co">&lt;!-- 跨規則的關聯：短時間內出現多種不同的 Critical，</span></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a><span class="co">     那像是一連串的攻擊步驟而非單點雜訊。刻意不加 same_field --&gt;</span></span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100132&quot;</span> <span class="ot">level=</span><span class="st">&quot;14&quot;</span> <span class="ot">frequency=</span><span class="st">&quot;12&quot;</span> <span class="ot">timeframe=</span><span class="st">&quot;120&quot;</span> <span class="ot">ignore=</span><span class="st">&quot;600&quot;</span>&gt;</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_matched_sid</span>&gt;100110&lt;/<span class="kw">if_matched_sid</span>&gt;</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Falco 多重 Critical: 120 秒內累計 12 次以上，疑似攻擊進行中&lt;/<span class="kw">description</span>&gt;</span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span></code></pre></div>
+<p>三個參數各有意義：</p>
+<pre class="text"><code>參數                   意義
+───────────────────────────────────────────────────────────────────
+frequency + timeframe  幾次/幾秒算爆發
+ignore                 抑制期，同一條規則在這段時間內只通知一次
+same_field             要「同一條規則重複」還是「不同規則一起出現」</code></pre>
+<p>Suricata 那組門檻要更高——網路事件天生比主機事件密集：</p>
+<div class="sourceCode" id="cb15"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100210&quot;</span> <span class="ot">level=</span><span class="st">&quot;13&quot;</span> <span class="ot">frequency=</span><span class="st">&quot;15&quot;</span> <span class="ot">timeframe=</span><span class="st">&quot;60&quot;</span> <span class="ot">ignore=</span><span class="st">&quot;300&quot;</span>&gt;</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_matched_sid</span>&gt;100201&lt;/<span class="kw">if_matched_sid</span>&gt;</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">same_field</span>&gt;data.alert.signature&lt;/<span class="kw">same_field</span>&gt;</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="co">&lt;!-- 這條是 Suricata 最獨特的價值：同一來源短時間內大量 alert，</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="co">     形狀就是掃描或橫向移動。Falco 看不到這件事——</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co">     對它而言那只是某個行程開了幾個 socket --&gt;</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100212&quot;</span> <span class="ot">level=</span><span class="st">&quot;13&quot;</span> <span class="ot">frequency=</span><span class="st">&quot;25&quot;</span> <span class="ot">timeframe=</span><span class="st">&quot;60&quot;</span> <span class="ot">ignore=</span><span class="st">&quot;600&quot;</span>&gt;</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_matched_sid</span>&gt;100201&lt;/<span class="kw">if_matched_sid</span>&gt;</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">same_field</span>&gt;data.src_ip&lt;/<span class="kw">same_field</span>&gt;</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Suricata: 單一來源 $(src_ip) 於 60 秒內觸發 25 次以上，疑似掃描或橫向移動&lt;/<span class="kw">description</span>&gt;</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">mitre</span>&gt;&lt;<span class="kw">id</span>&gt;T1046&lt;/<span class="kw">id</span>&gt;&lt;/<span class="kw">mitre</span>&gt;</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span></code></pre></div>
+<h3 id="收斂的效果">收斂的效果</h3>
+<p>實測：一個特權 Pod，兩分鐘內。</p>
+<pre class="text"><code>路徑                        送出則數
+────────────────────────────────────
+逐筆（falcosidekick 直送）  133
+Wazuh 爆發收斂（100132）    1</code></pre>
+<p><strong>133:1。</strong> 而且索引裡那 133
+筆一筆都沒少，隨時可以查。</p>
+<h2 id="6-mitre-對應與-mitredb-的陷阱">6. MITRE 對應與 mitre.db
+的陷阱</h2>
+<p>Wazuh 可以在規則上掛 ATT&amp;CK 編號：</p>
+<div class="sourceCode" id="cb17"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">mitre</span>&gt;</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>    &lt;<span class="kw">id</span>&gt;T1562.001&lt;/<span class="kw">id</span>&gt;</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>  &lt;/<span class="kw">mitre</span>&gt;</span></code></pre></div>
+<p><strong>但編號必須存在於 Wazuh 內建的
+<code>mitre.db</code>。</strong> 那是一個約 2023-05 的 ATT&amp;CK
+快照（4.14.3 實測 <code>max(modified_time) = 2023-05-04</code>）。</p>
+<p>查詢時注意 <code>technique.id</code> 是 STIX UUID，ATT&amp;CK 編號在
+<code>reference.external_id</code>：</p>
+<div class="sourceCode" id="cb18"><pre
+class="sourceCode sql"><code class="sourceCode sql"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> r.external_id, t.name <span class="kw">FROM</span> reference r</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="kw">JOIN</span> technique t <span class="kw">ON</span> t.<span class="kw">id</span> <span class="op">=</span> r.<span class="kw">id</span> <span class="kw">WHERE</span> r.external_id <span class="op">=</span> <span class="st">&#39;T1562.001&#39;</span>;</span></code></pre></div>
+<p>未知編號的行為是<strong>靜默降級</strong>：</p>
+<pre><code>** WARNING: Mitre Technique ID &#39;T1685&#39; not found in database.</code></pre>
+<p>規則照樣載入、照樣觸發 level 12 告警，只是 <code>mitre.id</code> /
+<code>mitre.tactic</code> / <code>mitre.technique</code>
+三個欄位<strong>整組消失</strong>。告警還在所以表面正常，但 ATT&amp;CK
+對應沒了——這比直接報錯難發現得多。</p>
+<blockquote>
+<p><strong>寫 Wazuh 規則前先查 mitre.db 確認編號存在。</strong>
+新編號要嘛自行更新 db， 要嘛沿用仍在 db 裡的舊編號。</p>
+</blockquote>
+<h2 id="7-三個會讓你懷疑人生的運維陷阱">7.
+三個會讓你懷疑人生的運維陷阱</h2>
+<h3 id="一自訂規則只能放-master">一、自訂規則只能放 master</h3>
+<p>Wazuh 叢集會把 master 的 ruleset 同步覆寫到 worker。直接改 worker
+容器內的 <code>/var/ossec/etc/{decoders,rules}/</code>
+會在數十秒後被還原，而症狀是 「decoder
+匹配不到」，<strong>沒有任何錯誤訊息</strong>。</p>
+<p>正式入口是 values 的 <code>localDecoder</code> /
+<code>localRules</code>。</p>
+<h3 id="二檔案同步到-worker--執行中的-analysisd-重新載入">二、檔案同步到
+worker ≠ 執行中的 analysisd 重新載入</h3>
+<p>這一個花掉我最多時間，而且它騙過了我所有的檢查。</p>
+<p>症狀：</p>
+<pre><code>wazuh-logtest 餵同一行 → 命中 100201，完全正確
+真實事件走完整管線     → Wazuh 一筆告警都沒有</code></pre>
+<p>中間每一站都證明是通的：Alloy 的丟棄計數器在動、transform 的 in/out
+都是 63、 syslog exporter 的 <code>send_failed</code> 是 0、Wazuh 的
+<code>discarded_count</code> 是 0， 而且<strong>同一條 TCP 連線上的
+Falco 事件正常抵達</strong>。</p>
+<p>我甚至 grep 過 worker 上的 <code>local_decoder.xml</code>，看到新
+decoder 已經在了。 於是排除了「規則沒同步」這個可能。</p>
+<p><strong>錯就錯在這裡。</strong></p>
+<blockquote>
+<p>檔案同步到 worker 是檔案層的事。<strong>跑著的 analysisd
+仍抱著舊的規則集。</strong></p>
+</blockquote>
+<p>而且 ConfigMap 是 subPath 掛載，kubelet 根本不會更新它。所以改完
+values 要：</p>
+<pre class="shell"><code>kubectl rollout restart sts/wazuh-manager-master sts/wazuh-manager-worker -n kube-security</code></pre>
+<p><strong>驗證要看行為（alerts.json 有沒有出現新規則 id），不要只 grep
+檔案。</strong></p>
+<h3 id="三level-0-的分類規則會吞掉告警">三、level 0
+的分類規則會吞掉告警</h3>
+<p>第 5
+篇講過，這裡再提一次因為它值得：加分類規則時，要同時確認「高等級的
+還走得出去」。而且如果另一條路徑的告警照常流動，你<strong>完全看不出有缺口</strong>。</p>
+<h2 id="8-驗證">8. 驗證</h2>
+<p>不要只驗一段，要從頭驗到尾。</p>
+<pre class="shell"><code># 1) decoder 與規則：用 wazuh-logtest 餵一筆真實的事件
+printf &#39;Oct  8 01:04:29 alloy suricata: %s\n&#39; &quot;$(cat sample-alert.json)&quot; \
+  | kubectl exec -i -n kube-security wazuh-manager-worker-0 -c wazuh-manager -- \
+      /var/ossec/bin/wazuh-logtest</code></pre>
+<p>畫面會輸出：</p>
+<pre><code>**Phase 2: Completed decoding.
+    name: &#39;suricata-syslog&#39;
+    alert.category: &#39;Misc activity&#39;
+    alert.signature: &#39;K8s Suricata ICMP Test&#39;
+    src_ip: &#39;10.0.1.5&#39;
+
+**Phase 3: Completed filtering (rules).
+    id: &#39;100201&#39;
+    level: &#39;3&#39;
+    description: &#39;Suricata: K8s Suricata ICMP Test [10.0.1.5 -&gt; 192.168.247.9]&#39;
+**Alert to be generated.</code></pre>
+<pre class="shell"><code># 2) 真實流量端到端：產生跨節點 ICMP，看 alerts.json
+kubectl exec -n kube-security wazuh-manager-worker-0 -c wazuh-manager -- \
+  sh -c &#39;grep -o &quot;\&quot;id\&quot;:\&quot;1002[0-9][0-9]\&quot;&quot; /var/ossec/logs/alerts/alerts.json | sort | uniq -c&#39;</code></pre>
+<p>畫面會輸出：</p>
+<pre><code>    113 &quot;id&quot;:&quot;100201&quot;
+      2 &quot;id&quot;:&quot;100202&quot;
+      1 &quot;id&quot;:&quot;100203&quot;
+      1 &quot;id&quot;:&quot;100211&quot;</code></pre>
+<p><strong>第 1 步過了但第 2 步沒過，就是上一節的「analysisd
+沒重載」。</strong>
+這兩步各自驗的是不同的東西：規則對不對，以及規則有沒有真的在跑。</p>
+<h2 id="小結">小結</h2>
+<ul>
+<li><strong>「告警大腦」的腦在規則層，不在輸出通道</strong>：要的是「判斷在
+Wazuh」， 不是「封包從 Wazuh 出去」。搞清楚這件事可以省下很多力氣。</li>
+<li><strong>索引收全量，通知給事件</strong>：level 12
+進索引供獵捕、level 13 以上才通知。 實測逐筆 133 則 vs 收斂後 1
+則，而且那 133 筆一筆都沒少。</li>
+<li><strong>內建支援要再問一句支援到什麼程度</strong>：Wazuh 內建的
+Suricata 規則把 53000 條規則打成同一個 level
+3，在分級架構下等於沒有支援。</li>
+<li><strong>檔案同步 ≠ 規則生效</strong>：grep 到新內容不代表 analysisd
+載入了。驗證要看
+行為不要看檔案。這是本系列第三次出現「靜態證據不能證明動態行為」。</li>
+</ul>
+<p>下一篇是最後一哩：把告警送出去，以及如何不讓它變成一個被靜音的頻道。</p>
+<!-- series:start -->
+
+<p>系列文：</p>
+<ul>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/01-overview.md">一個人的
+DevSecOps (1)：先畫地圖，再動手</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/02-zero-trust-network.md">一個人的
+DevSecOps (2)：零信任的地基</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/03-observability.md">一個人的
+DevSecOps (3)：看得見才管得住</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/04-falco-operator.md">一個人的
+DevSecOps (4)：主機層偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/05-k8s-audit.md">一個人的
+DevSecOps (5)：控制平面偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/06-suricata.md">一個人的
+DevSecOps (6)：網路層偵測</a></li>
+<li><strong>一個人的 DevSecOps (7)：從事件到告警（本篇）</strong></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/08-alerting-and-fatigue.md">一個人的
+DevSecOps (8)：最後一哩與告警疲勞</a></li>
+</ul>
+<!-- series:end -->
+
+<p>想要知道更多，可參考以下資源：</p>
+<ul>
+<li><a
+href="https://documentation.wazuh.com/current/user-manual/ruleset/">Wazuh
+Ruleset</a></li>
+<li><a
+href="https://documentation.wazuh.com/current/user-manual/ruleset/custom.html">Wazuh
+Custom Rules</a></li>
+<li><a
+href="https://documentation.wazuh.com/current/user-manual/ruleset/mitre.html">Wazuh
+MITRE ATT&amp;CK</a></li>
+<li><a
+href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/syslogexporter">OpenTelemetry
+Syslog Exporter</a></li>
+</ul>
+</body>
+</html>

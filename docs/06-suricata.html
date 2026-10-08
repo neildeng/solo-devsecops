@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>06-suricata</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">06-suricata</h1>
+</header>
+<h1 id="一個人的-devsecops-6網路層偵測">一個人的 DevSecOps
+(6)：網路層偵測</h1>
+<h2 id="背景說明">背景說明</h2>
+<p>三個偵測來源的最後一個：Suricata。它看的是<strong>封包</strong>——C2
+回連、內網掃描、 橫向移動、L7 協定細節。這些是 Falco 與 K8s Audit
+都看不到的。</p>
+<p>本文會做三件事：</p>
+<ol type="1">
+<li>設計一個把規則打進 image 的 Helm chart（而不是 ConfigMap）</li>
+<li>說明 Cilium 環境下 Suricata
+的<strong>視野限制</strong>——這會決定你怎麼測</li>
+<li>示範「<strong>先量再調</strong>」：裝完先量組成，再決定要調什麼</li>
+</ol>
+<p>第 3 點是本文的主軸。IDS 是最容易一裝上去就製造幾 GB 噪音的元件，而且
+它的噪音會一路灌進 Loki、Wazuh
+與索引。<strong>在抱怨出現之前就先量，成本低得多。</strong></p>
+<h2 id="環境必須">環境必須</h2>
+<ol type="1">
+<li>已完成第 3 篇（Loki / Alloy）</li>
+<li><strong>至少三個節點</strong>——理由見第 2 節</li>
+<li><code>docker</code>、<code>helm</code>、<code>yq</code></li>
+</ol>
+<h2 id="1-規則放-image不放-configmap">1. 規則放 image，不放
+ConfigMap</h2>
+<p>Suricata 的規則來自 <code>suricata-update</code>，啟用 ET Open
+之後展開約 <strong>53000 條、 十餘 MB</strong>。ConfigMap 的上限是 1
+MiB，放不下。</p>
+<p>更重要的是：<strong>image tag
+本身就是一個可回滾的版本</strong>。規則集更新是會出事的
+操作（某條新規則可能讓你一夜之間多出幾萬筆告警），能用一個 tag 回到昨天
+的狀態很有價值。</p>
+<p>所以用兩階段建置：</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Stage 1：以與 DaemonSet 相同版本的 Suricata 產生規則並驗證</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> jasonish/suricata:8.0.6 <span class="kw">AS</span> build</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> update.yaml enable.conf disable.conf modify.conf /etc/suricata/</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> rules/local.rules /etc/suricata/rules/local.rules</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> sources.txt /tmp/sources.txt</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="co"># 未指定 --no-test，suricata-update 會以 suricata -T 驗證；規則有誤就讓建置失敗</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="kw">RUN</span> <span class="ex">suricata-update</span> update-sources <span class="dt">\</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">&amp;&amp;</span> <span class="fu">grep</span> <span class="at">-Ev</span> <span class="st">&#39;^\s*(#|$)&#39;</span> /tmp/sources.txt <span class="kw">|</span> <span class="fu">xargs</span> <span class="at">-r</span> <span class="at">-n1</span> suricata-update enable-source <span class="dt">\</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">&amp;&amp;</span> <span class="ex">suricata-update</span> <span class="at">--config</span> /etc/suricata/update.yaml <span class="at">--no-reload</span> <span class="at">--fail</span> <span class="dt">\</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">&amp;&amp;</span> <span class="ex">suricata-update</span> list-enabled-sources</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Stage 2：只保留產出的規則</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> alpine:3.22</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> <span class="op">--from=build</span> /var/lib/suricata/rules/ /rules/</span></code></pre></div>
+<p>DaemonSet 用一個 initContainer 把 <code>/rules</code> 複製到
+emptyDir，主容器唯讀掛載。</p>
+<h3 id="建置階段的驗證抓不到所有問題">建置階段的驗證抓不到所有問題</h3>
+<p>Stage 1 的 <code>suricata -T</code> 用的是 <strong>image 的預設
+<code>suricata.yaml</code></strong>，而 DaemonSet 跑的是 chart
+渲染出來的設定。兩者的差異會讓規則載入失敗： ET Open 會引用
+<code>$HTTP_SERVERS</code>、<code>$SQL_SERVERS</code> 這類變數，chart
+的設定 少宣告一個，對應的規則就整批載不進去。</p>
+<p>所以另外寫一支腳本，<strong>用 chart
+實際渲染的設定再驗一次</strong>：</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">#!/usr/bin/env bash</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="at">-euo</span> pipefail</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="va">CHART_DIR</span><span class="op">=</span><span class="st">&quot;</span><span class="va">$(</span><span class="bu">cd</span> <span class="st">&quot;</span><span class="va">$(</span><span class="fu">dirname</span> <span class="st">&quot;</span><span class="va">$0</span><span class="st">&quot;</span><span class="va">)</span><span class="st">&quot;</span> <span class="kw">&amp;&amp;</span> <span class="bu">pwd</span><span class="va">)</span><span class="st">&quot;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="va">SURICATA_IMAGE</span><span class="op">=</span><span class="st">&quot;</span><span class="va">$(</span><span class="ex">yq</span> <span class="st">&#39;.image.repository + &quot;:&quot; + .image.tag&#39;</span> <span class="st">&quot;</span><span class="va">$CHART_DIR</span><span class="st">/values.yaml&quot;</span><span class="va">)</span><span class="st">&quot;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="va">RULES_TAG</span><span class="op">=</span><span class="st">&quot;</span><span class="va">${1</span><span class="op">:-</span><span class="va">$(</span><span class="ex">yq</span> <span class="st">&#39;.rules.image.tag&#39;</span> <span class="st">&quot;</span><span class="va">$CHART_DIR</span><span class="st">/values.yaml&quot;</span><span class="va">)}</span><span class="st">&quot;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="va">WORK</span><span class="op">=</span><span class="st">&quot;</span><span class="va">$(</span><span class="fu">mktemp</span> <span class="at">-d</span><span class="va">)</span><span class="st">&quot;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co"># 關鍵：用 helm template 取出真正會用的 suricata.yaml</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="ex">helm</span> template suricata <span class="st">&quot;</span><span class="va">$CHART_DIR</span><span class="st">&quot;</span> <span class="at">--show-only</span> templates/configmap.yaml <span class="dt">\</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">|</span> <span class="ex">yq</span> <span class="st">&#39;.data.&quot;suricata.yaml&quot;&#39;</span> <span class="op">&gt;</span> <span class="st">&quot;</span><span class="va">$WORK</span><span class="st">/suricata.yaml&quot;</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> create <span class="at">--name</span> validate-rules <span class="st">&quot;</span><span class="va">$RULES_REPO</span><span class="st">:</span><span class="va">$RULES_TAG</span><span class="st">&quot;</span> <span class="op">&gt;</span>/dev/null</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> cp <span class="st">&quot;validate-rules:/rules&quot;</span> <span class="st">&quot;</span><span class="va">$WORK</span><span class="st">/rules&quot;</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--rm</span> <span class="dt">\</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">-v</span> <span class="st">&quot;</span><span class="va">$WORK</span><span class="st">/suricata.yaml:/etc/suricata/suricata.yaml:ro&quot;</span> <span class="dt">\</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">-v</span> <span class="st">&quot;</span><span class="va">$WORK</span><span class="st">/rules:/var/lib/suricata/rules:ro&quot;</span> <span class="dt">\</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">--entrypoint</span> suricata <span class="st">&quot;</span><span class="va">$SURICATA_IMAGE</span><span class="st">&quot;</span> <span class="dt">\</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    <span class="at">-T</span> <span class="at">-c</span> /etc/suricata/suricata.yaml <span class="at">-l</span> /tmp <span class="op">&gt;</span> <span class="st">&quot;</span><span class="va">$WORK</span><span class="st">/test.log&quot;</span> <span class="dv">2</span><span class="op">&gt;&amp;</span><span class="dv">1</span> <span class="kw">||</span> <span class="fu">true</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a><span class="fu">grep</span> <span class="at">-E</span> <span class="st">&#39;rules successfully loaded&#39;</span> <span class="st">&quot;</span><span class="va">$WORK</span><span class="st">/test.log&quot;</span></span></code></pre></div>
+<p>畫面會輸出：</p>
+<pre><code>1 rule files processed. 53050 rules successfully loaded, 0 rules failed, 0 rules skipped
+Validation passed.</code></pre>
+<p><code>0 rules failed</code> 才算通過。</p>
+<h2 id="2-視野限制先知道你看不到什麼">2.
+視野限制：先知道你看不到什麼</h2>
+<p>這一節如果跳過，後面會浪費你好幾個小時。</p>
+<blockquote>
+<p><strong>Cilium native routing 下，同節點的 Pod 互連不經過
+<code>eth0</code>。</strong></p>
+</blockquote>
+<p>Suricata 以 AF_PACKET 掛在 <code>eth0</code> 上，所以它看得到：</p>
+<ul>
+<li>✅ 跨節點的 Pod 互連</li>
+<li>✅ 進出叢集的流量</li>
+<li>❌ <strong>同節點的 Pod 互連</strong></li>
+</ul>
+<p>測規則時如果來源與目的碰巧在同一個節點，你會得到「規則沒問題但一筆都沒
+觸發」的假象，然後開始懷疑規則、懷疑設定、懷疑 AF_PACKET ——而真正的問題
+是封包從來沒經過 Suricata。</p>
+<p><strong>所以測試一定要跨節點：</strong></p>
+<pre class="shell"><code>kubectl run icmp-probe --image=busybox:1.36 --restart=Never -n default \
+  --overrides=&#39;{&quot;spec&quot;:{&quot;nodeName&quot;:&quot;the-one-worker3&quot;}}&#39; \
+  --command -- sh -c &#39;ping -c 5 192.168.247.9&#39;   # ← worker2 的 node IP</code></pre>
+<p>這也回頭解釋了第 1 篇為什麼堅持開三個 worker。</p>
+<h2 id="3-部署">3. 部署</h2>
+<pre class="shell"><code># tag 以建置日期為版本，需與 values.yaml 的 rules.image.tag 一致
+RULES_TAG=2026.10.08.1
+docker build -t harbor.example.com/security/suricata-rules:$RULES_TAG \
+  ./charts/suricata/suricata-rules
+
+./charts/suricata/validate-rules.sh $RULES_TAG
+
+kind load docker-image -n the-one harbor.example.com/security/suricata-rules:$RULES_TAG
+
+helm upgrade --install suricata -n kube-security ./charts/suricata</code></pre>
+<p>確認規則有載入：</p>
+<pre class="shell"><code>kubectl logs -n kube-security -l app.kubernetes.io/name=suricata -c suricata --tail=50 \
+  | grep &quot;rules successfully loaded&quot;</code></pre>
+<p>畫面會輸出：</p>
+<pre><code>Info: detect: 1 rule files processed. 53037 rules successfully loaded, 0 rules failed, 0 rules skipped
+Notice: threads: Threads created -&gt; W: 10 FM: 1 FR: 1   Engine started.</code></pre>
+<p>到這裡它「會動」了。<strong>但先別接到告警鏈。</strong></p>
+<h2 id="4-先量再調">4. 先量，再調</h2>
+<p>裝完第一件事是量它產生了什麼，不是看它的告警。</p>
+<pre class="shell"><code>kubectl exec -n kube-security ds/suricata -c suricata -- sh -c &#39;
+  wc -lc /var/log/suricata/eve.json
+  grep -o &quot;\&quot;event_type\&quot;:\&quot;[a-z_]*\&quot;&quot; /var/log/suricata/eve.json | sort | uniq -c | sort -rn
+&#39;</code></pre>
+<p>畫面會輸出（單節點、約 16 分鐘）：</p>
+<pre><code>   21147 13648539 /var/log/suricata/eve.json
+   7932 &quot;event_type&quot;:&quot;flow&quot;
+   6986 &quot;event_type&quot;:&quot;dns&quot;
+   5942 &quot;event_type&quot;:&quot;http&quot;
+    158 &quot;event_type&quot;:&quot;alert&quot;
+    118 &quot;event_type&quot;:&quot;stats&quot;
+     11 &quot;event_type&quot;:&quot;tls&quot;</code></pre>
+<p>再看那 158 筆 alert 是什麼：</p>
+<pre><code>     29 &quot;signature&quot;:&quot;SURICATA HTTP Response excessive header repetition&quot;
+     27 &quot;signature&quot;:&quot;K8s Suricata ICMP Test&quot;
+     19 &quot;signature&quot;:&quot;SURICATA STREAM ESTABLISHED packet out of window&quot;
+     17 &quot;signature&quot;:&quot;SURICATA HTTP Request unrecognized authorization method&quot;
+     16 &quot;signature&quot;:&quot;SURICATA STREAM Packet with invalid ack&quot;
+     ...</code></pre>
+<p>整理成一張表：</p>
+<pre class="text"><code>項目                       數字
+─────────────────────────────────────────────────────────────────
+eve.json                   21147 行 / 13.6 MB → 約 1.2 GB/天/node
+alert 佔比                 0.75%
+158 筆 alert 中的協定異常  111 筆（70%）
+ET Open 真實命中           0 筆</code></pre>
+<p>三個問題浮出來了，而且是三個不同層次的問題。</p>
+<h2 id="5-問題一flow-事件是重複資料">5. 問題一：flow 事件是重複資料</h2>
+<p>flow 佔 37.5%，是整份 eve.json 裡最大的一塊。但是——</p>
+<blockquote>
+<p><strong>Cilium Hubble 已經提供 flow 層級的可視性</strong>（來源/目的
+endpoint、 verdict、L4）。</p>
+</blockquote>
+<p>Suricata 的 flow 記錄是同一件事的第二份。保留 <code>http</code> /
+<code>dns</code> / <code>tls</code> / <code>ssh</code>——那是 Hubble
+給不了的 L7 細節，也是 Threat Hunting 的主要素材。</p>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">suricata</span><span class="kw">:</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eve</span><span class="kw">:</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">types</span><span class="kw">:</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">alert</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">http</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">dns</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">tls</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">ssh</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">stats</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="co"># 刻意不含 flow</span></span></code></pre></div>
+<p>這裡學到一條判斷原則：</p>
+<blockquote>
+<p><strong>決定一份資料該不該收，要看「生態系裡已經有誰在收同樣的東西」，
+而不是只看「這份資料本身有沒有用」。</strong></p>
+</blockquote>
+<h2 id="6-問題二沒有人在輪替-evejson">6. 問題二：沒有人在輪替
+eve.json</h2>
+<p>1.2 GB/天/node，寫在 hostPath 上，<strong>沒有輪替</strong>。</p>
+<p>有趣的是，image 裡其實附了
+<code>/etc/logrotate.d/suricata</code>：</p>
+<pre><code>/var/log/suricata/*.log /var/log/suricata/*.json {
+    daily
+    missingok
+    rotate 3
+    ...
+}</code></pre>
+<p>但是<strong>容器裡沒有 cron 去執行它</strong>。設定存在、沒有人跑。
+而且症狀是<strong>節點磁碟滿，不是 Suricata 報錯</strong>。</p>
+<p>解法是一個 sidecar：</p>
+<div class="sourceCode" id="cb14"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> logrotate</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">image</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;{{ .Values.image.repository }}:{{ .Values.image.tag }}&quot;</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">command</span><span class="kw">:</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="kw">- </span><span class="at">/bin/sh</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="kw">- </span><span class="at">-c</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="kw">- </span><span class="ch">|</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="at">              while true; do</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="at">                  logrotate -s /var/log/suricata/.logrotate.state \</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a><span class="at">                            /etc/logrotate-suricata/logrotate.conf || true</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a><span class="at">                  sleep {{ .Values.logs.rotate.intervalSeconds }}</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="at">              done</span></span></code></pre></div>
+<p>設定改成以<strong>大小</strong>為準，而不是 image 預設的
+<code>daily</code> + <code>rotate 3</code> （那在 1.2
+GB/天的速率下是每節點 4.8 GB）：</p>
+<pre><code>/var/log/suricata/*.log /var/log/suricata/*.json {
+    size 200M
+    rotate 2
+    missingok
+    notifempty
+    nocompress
+    copytruncate
+}</code></pre>
+<p><strong>為什麼用 <code>copytruncate</code> 而不是 rename +
+<code>suricatasc -c reopen-log-files</code>：</strong> Alloy 的
+<code>loki.source.file</code>
+對「檔案被截短」有明確處理（偵測到大小倒退就把 offset 歸零），rename
+則可能讓它跟丟尾端。而且 copytruncate 不需要讓 sidecar 碰 Suricata
+的控制 socket。</p>
+<h2 id="7-問題三70-的-alert-是環境造成的">7. 問題三：70% 的 alert
+是環境造成的</h2>
+<p><code>SURICATA STREAM invalid ack</code> / <code>out of window</code>
+這類協定異常佔了 111 筆。
+它們<strong>與攻擊無關</strong>，兩個成因都是環境：</p>
+<ol type="1">
+<li>第 2 節講的半邊可見——只看得到一半的流，序號當然對不上</li>
+<li>veth 上的 GRO/LRO 會把封包重組後才交給
+AF_PACKET，序號看起來跳號</li>
+</ol>
+<p>治本的做法是在節點關掉 offload：</p>
+<pre class="shell"><code>ethtool -K eth0 gro off lro off</code></pre>
+<p>但那是改節點而非改 chart
+的事，而且會影響該節點所有流量的效能。在「只看得到
+跨節點流量」的前提下，這組規則提供的資訊量趨近於零，所以直接用
+<code>disable.conf</code> 關掉：</p>
+<pre><code># ---- TCP 串流異常：在本叢集是結構性誤報，不是偵測訊號 ----
+group:stream-events.rules
+
+# ---- HTTP 協定異常：Kubernetes 的正常流量形狀 ----
+# 2221034  unrecognized authorization method —— API server 的 Bearer token
+# 2221036  excessive header repetition      —— 多值 header 的正常用法
+# 2221013  request header invalid
+2221013
+2221034
+2221036</code></pre>
+<p>重建 image 後確認：</p>
+<pre class="shell"><code>docker run --rm --entrypoint sh harbor.example.com/security/suricata-rules:$RULES_TAG -c &#39;
+  echo &quot;STREAM 啟用中: $(grep -c &quot;^alert .*SURICATA STREAM&quot; /rules/suricata.rules)&quot;
+  echo &quot;STREAM 已停用: $(grep -c &quot;^# alert .*SURICATA STREAM&quot; /rules/suricata.rules)&quot;
+&#39;</code></pre>
+<p>畫面會輸出：</p>
+<pre><code>STREAM 啟用中: 0
+STREAM 已停用: 66</code></pre>
+<h2 id="8-煙霧測試規則自己長成了噪音來源">8.
+煙霧測試規則自己長成了噪音來源</h2>
+<p>這一節是整篇最值得記的。</p>
+<p>為了確認整條鏈是通的，我寫了一條最簡單的規則：</p>
+<pre><code>alert icmp any any -&gt; any any (msg:&quot;K8s Suricata ICMP Test&quot;; sid:1000001; rev:3;)</code></pre>
+<p>看起來無害。它踩了兩次：</p>
+<p><strong>第一次</strong>：<code>any any</code> 會收到 IPv6 的 router
+solicitation / neighbor discovery multicast。16 分鐘自己產生 27 筆。</p>
+<p>於是收斂成 IPv4 echo request：</p>
+<pre><code>alert icmp $HOME_NET any -&gt; $HOME_NET any (... itype:8; icode:0; ...)</code></pre>
+<p><strong>第二次</strong>：節點之間本來就有背景 ICMP（control-plane →
+worker 的健康檢查）， 實測<strong>數分鐘 113 筆</strong>。</p>
+<p>第二次才是真正危險的。113 筆的量足以讓下游 Wazuh 的爆發規則
+（同一特徵 60 秒 15 次）判定為「事件爆發」而送出 <strong>level 13
+通知</strong>。</p>
+<blockquote>
+<p><strong>一條為了驗證管線而存在的規則，差點變成告警疲勞的源頭。</strong></p>
+</blockquote>
+<p>補上 threshold：</p>
+<pre><code>alert icmp $HOME_NET any -&gt; $HOME_NET any (msg:&quot;K8s Suricata ICMP Test&quot;;
+  itype:8; icode:0;
+  threshold:type limit, track by_src, count 1, seconds 300;
+  classtype:misc-activity;
+  metadata:mitre_tactic_id TA0007, mitre_technique_id T1046;
+  sid:1000001; rev:5;)</code></pre>
+<p>實測一次 ping 剛好產生一筆：</p>
+<pre><code>before=160
+after=161</code></pre>
+<p>順帶補了 <code>classtype</code>——沒有它，eve.json 的
+<code>alert.category</code> 是空字串，
+下游分級時無從依據。<strong>寫自訂規則很容易漏掉這個欄位。</strong></p>
+<h2 id="9-另一個自我放大的迴圈">9. 另一個自我放大的迴圈</h2>
+<p>還有一條規則值得抄走。Alloy 以 snappy 壓縮推送日誌給 Loki，這會觸發
+Suricata 內建的 <code>sid 2221033</code>（abnormal
+Content-Encoding）。而那筆 alert 又被 Alloy 收集回 Loki
+——<strong>自我放大迴圈</strong>。</p>
+<p>只放行這一段流量，其他 Content-Encoding 異常照常偵測：</p>
+<pre><code>pass http any any -&gt; any any (msg:&quot;K8s Allow Alloy log push to Loki&quot;;
+  flow:established,to_server;
+  http.method; content:&quot;POST&quot;;
+  http.uri; content:&quot;/loki/api/v1/push&quot;; startswith;
+  http.user_agent; content:&quot;Alloy/&quot;; startswith;
+  sid:1000002; rev:1;)</code></pre>
+<p><strong>在可觀測性系統裡部署 IDS 要特別小心這種迴圈</strong>：IDS
+的告警會被日誌系統 收走，而日誌系統的流量又被 IDS 看著。</p>
+<h2 id="10-驗證">10. 驗證</h2>
+<pre class="shell"><code># 1) 規則載入
+kubectl logs -n kube-security -l app.kubernetes.io/name=suricata -c suricata --tail=50 \
+  | grep &quot;rules successfully loaded&quot;
+
+# 2) 煙霧測試（務必跨節點）
+kubectl exec -n kube-security ds/suricata -c suricata -- \
+  sh -c &#39;grep -c &quot;K8s Suricata ICMP Test&quot; /var/log/suricata/eve.json&#39;
+
+# 3) 事件組成：alert 佔比應遠低於其他 event_type
+kubectl exec -n kube-security ds/suricata -c suricata -- \
+  sh -c &#39;grep -o &quot;\&quot;event_type\&quot;:\&quot;[a-z_]*\&quot;&quot; /var/log/suricata/eve.json | sort | uniq -c | sort -rn&#39;
+
+# 4) 磁碟：logrotate sidecar 應把 eve.json 壓在設定的 size 以內
+kubectl exec -n kube-security ds/suricata -c suricata -- ls -lh /var/log/suricata/</code></pre>
+<p><strong><code>local.rules</code> 改動後必須重建 rules image 並換
+tag。</strong> DaemonSet 是從 image 的 <code>/rules</code>
+複製規則，改檔案不重建等於沒改。</p>
+<h2 id="小結">小結</h2>
+<ul>
+<li><strong>規則進 image 不進 ConfigMap</strong>：53000 條規則放不下 1
+MiB，而且 image tag 本身就是可回滾的版本。另外要用 chart
+實際渲染的設定再驗一次——建置階段的 <code>suricata -T</code> 用的是 image
+預設設定，抓不到變數缺漏。</li>
+<li><strong>先知道看不到什麼</strong>：Cilium native routing 下同節點
+Pod 互連不經過 eth0。
+不知道這件事就會把「封包沒經過」誤判成「規則寫錯」。</li>
+<li><strong>裝完先量組成，不要先看告警</strong>：alert 只佔 0.75%、其中
+70% 是環境造成的、 flow 是 Hubble
+已有的重複資料、而且沒有人在輪替日誌——四個問題都是量出來的，
+不是抱怨出來的。</li>
+<li><strong>連煙霧測試規則都要設
+threshold</strong>：節點間的背景流量足以讓它觸發下游的
+爆發告警。驗證用的東西也會變成噪音來源。</li>
+</ul>
+<p>下一篇把三個來源匯進 Wazuh，讓它決定什麼才叫「告警」。</p>
+<!-- series:start -->
+
+<p>系列文：</p>
+<ul>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/01-overview.md">一個人的
+DevSecOps (1)：先畫地圖，再動手</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/02-zero-trust-network.md">一個人的
+DevSecOps (2)：零信任的地基</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/03-observability.md">一個人的
+DevSecOps (3)：看得見才管得住</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/04-falco-operator.md">一個人的
+DevSecOps (4)：主機層偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/05-k8s-audit.md">一個人的
+DevSecOps (5)：控制平面偵測</a></li>
+<li><strong>一個人的 DevSecOps (6)：網路層偵測（本篇）</strong></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/07-wazuh-brain.md">一個人的
+DevSecOps (7)：從事件到告警</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/08-alerting-and-fatigue.md">一個人的
+DevSecOps (8)：最後一哩與告警疲勞</a></li>
+</ul>
+<!-- series:end -->
+
+<p>想要知道更多，可參考以下資源：</p>
+<ul>
+<li><a href="https://docs.suricata.io/">Suricata User Guide</a></li>
+<li><a
+href="https://docs.suricata.io/en/latest/rule-management/suricata-update.html">suricata-update</a></li>
+<li><a href="https://rules.emergingthreats.net/">Emerging Threats Open
+Ruleset</a></li>
+<li><a
+href="https://docs.suricata.io/en/latest/output/eve/eve-json-output.html">Suricata
+EVE JSON Output</a></li>
+</ul>
+</body>
+</html>

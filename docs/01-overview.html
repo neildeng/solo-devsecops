@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>01-overview</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">01-overview</h1>
+</header>
+<h1 id="一個人的-devsecops-1先畫地圖再動手">一個人的 DevSecOps
+(1)：先畫地圖，再動手</h1>
+<h2 id="背景說明">背景說明</h2>
+<p>「DevSecOps」這個詞在招募啟事上看起來像一個職位，在實作上卻是一整排工具。
+網路上多數文章教的是「怎麼裝 Falco」「怎麼裝
+Wazuh」，裝完之後各自亮著綠燈，
+但它們之間要怎麼接、誰該負責判斷、哪些訊號該吵醒你 ——
+這部分往往沒有人寫。</p>
+<p>本系列要做的事是：<strong>在一台筆電上，用 kind
+搭出一套完整的偵測與告警鏈， 並且把每一個接點的理由寫清楚。</strong>
+不是「照著貼就會動」的教學，而是
+「為什麼要這樣接、不這樣接會怎樣」的紀錄。</p>
+<p>目標讀者是已經會用 Kubernetes、想往安全這個方向走的工程師。你不需要有
+SOC 經驗，但需要願意在每一步停下來問一句「這個訊號到底從哪裡來」。</p>
+<p>完成之後你會有：三個互補的偵測來源、一條收斂過的告警鏈、兩個可以查的
+資料倉儲，以及一份自己踩過坑所以記得住的地圖。</p>
+<h2 id="環境必須">環境必須</h2>
+<ol type="1">
+<li>事先安裝好指令集：<code>docker</code>、<code>kind</code>、<code>kubectl</code>、<code>helm</code>、<code>yq</code>、<code>jq</code></li>
+<li>Docker Desktop 或 OrbStack，至少配置 <strong>10 CPU / 16
+GiB</strong></li>
+<li>一台能連外的機器（第一次要拉不少 image）</li>
+</ol>
+<h2 id="1-先看地圖">1. 先看地圖</h2>
+<p>整套系統只有兩個方向的資料流，但很容易在裝到第五個工具時忘記自己在幹嘛。
+先記住這張圖：</p>
+<p><img
+src="https://raw.githubusercontent.com/neildeng/solo-devsecops/main/articles/images/01-architecture.png"
+alt="一個人的 DevSecOps 整體架構" /></p>
+<p>三句話說完這張圖：</p>
+<ul>
+<li><strong>三個來源互補，不重疊。</strong>
+它們看的是三件不同的事。</li>
+<li><strong>Loki 收全量，Wazuh 收需要判斷的。</strong>
+前者供事後獵捕，後者決定要不要吵你。</li>
+<li><strong>只有一個出口。</strong>
+分組、抑制、重送間隔都在同一個地方設。</li>
+</ul>
+<h2 id="2-為什麼是這三個來源">2. 為什麼是這三個來源</h2>
+<p>這是整個系列最重要的一節。如果只讀一段，讀這段。</p>
+<pre class="text"><code>來源       看得到                                   看不到
+──────────────────────────────────────────────────────────────────────
+Falco      行程、檔案存取、syscall、容器內開 shell  網路上發生什麼事
+K8s Audit  誰呼叫了 API、RBAC 變更、Pod 規格        容器裡實際做了什麼
+Suricata   封包內容、C2 回連、掃描、L7 細節         主機上的行為</code></pre>
+<p>三者的盲點彼此互補，這不是巧合，是<strong>分層的必然</strong>：一次入侵會在不同的層
+留下不同的痕跡，只看一層就只能看到故事的一段。</p>
+<p>舉個本系列後面會真的撞到的例子：某個服務的 Basic Auth 憑證在叢集內以
+明文 HTTP 傳輸。</p>
+<ul>
+<li>從瀏覽器看：網址列是 <code>https</code>，完全正常</li>
+<li>Falco 看不到：那是網路上的事，不是主機上的事</li>
+<li>Hubble 看得到連線存在，但看不到 header 裡有
+<code>Authorization: Basic</code></li>
+<li><strong>只有 Suricata 看得到</strong></li>
+</ul>
+<p>反過來說，有人在容器裡 <code>kubectl exec</code> 進去開一個
+shell，Suricata 看到的 只是一條加密連線，Falco 卻會明確告訴你「某個 Pod
+裡出現互動式 shell」。</p>
+<blockquote>
+<p><strong>補一個偵測來源的價值，不是多一個告警，是多一種別人看不到的視角。</strong></p>
+</blockquote>
+<h2 id="3-先算資源不然會被-scheduler-騙">3. 先算資源，不然會被 scheduler
+騙</h2>
+<p>這是我在第一天就踩到的坑，而且它騙得很徹底。</p>
+<p>部署之前想先確認資源夠不夠，於是看了一眼節點：</p>
+<pre class="shell"><code>kubectl get nodes -o custom-columns=NAME:.metadata.name,CPU:.status.capacity.cpu,MEM:.status.capacity.memory</code></pre>
+<p>畫面會輸出：</p>
+<pre><code>NAME                    CPU   MEM
+the-one-control-plane   10    16116604Ki
+the-one-worker          10    16116604Ki
+the-one-worker2         10    16116604Ki
+the-one-worker3         10    16116604Ki</code></pre>
+<p>看起來有 40 CPU / 64 GiB，於是放心地用了某個 chart 的預設值 （3700m
+CPU / 5.2 GiB）。結果 Pod 一直 <code>Pending</code>。</p>
+<p>再看一眼 Docker：</p>
+<pre class="shell"><code>docker info --format &#39;{{.NCPU}} CPU / {{.MemTotal}} bytes&#39;</code></pre>
+<p>畫面會輸出：</p>
+<pre><code>10 CPU / 16819609600 bytes</code></pre>
+<p><strong>kind 的四個節點是同一個 Docker VM
+裡的四個容器，那是同一份資源被數了四次。</strong></p>
+<p>這個陷阱在單機 kind 上特別危險，因為 scheduler 會照「每節點 10
+核」去排程， 它不知道四個節點共用一份 CPU。<strong>你會看到 Pod
+成功排程、然後整台機器一起慢下來</strong>， 而不是乾脆的
+<code>Insufficient cpu</code>。</p>
+<p>所以本系列所有元件都刻意縮編過：</p>
+<pre class="text"><code>元件           chart 預設  本系列
+─────────────────────────────────
+Wazuh indexer  3 副本      1 副本
+Wazuh worker   2 副本      1 副本
+JVM heap       預設        768m
+PVC            50Gi        10Gi</code></pre>
+<p>縮編後整套約 1150m CPU / 2.6 GiB，留得下空間給被監控的工作負載。</p>
+<h2 id="4-建立叢集">4. 建立叢集</h2>
+<p><code>kind</code>
+的設定檔有兩個與後面章節直接相關的地方，先放進去，免得之後重建：</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># kind/cluster.yaml</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Cluster</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> kind.x-k8s.io/v1alpha4</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="fu">name</span><span class="kw">:</span><span class="at"> the-one</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="fu">networking</span><span class="kw">:</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># 由 Cilium 接手，不要讓 kindnet 先上</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">disableDefaultCNI</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kubeProxyMode</span><span class="kw">:</span><span class="at"> none</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="fu">nodes</span><span class="kw">:</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> control-plane</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">kubeadmConfigPatches</span><span class="kw">:</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="ch">|</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> ClusterConfiguration</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">apiServer</span><span class="kw">:</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">extraArgs</span><span class="kw">:</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="co"># 稽核日誌。第 5 篇會用到，先開著</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">audit-policy-file</span><span class="kw">:</span><span class="at"> /etc/kubernetes/policies/audit-policy.yaml</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">audit-webhook-config-file</span><span class="kw">:</span><span class="at"> /etc/kubernetes/policies/audit-webhook.yaml</span></span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">extraMounts</span><span class="kw">:</span></span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">hostPath</span><span class="kw">:</span><span class="at"> ./kind/audit-policy.yaml</span></span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">containerPath</span><span class="kw">:</span><span class="at"> /etc/kubernetes/policies/audit-policy.yaml</span></span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">readOnly</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> worker</span></span></code></pre></div>
+<p>兩個選擇值得說明：</p>
+<p><strong><code>disableDefaultCNI: true</code>。</strong> 第 2
+篇整篇都在講 Cilium 的 <code>CiliumClusterwideNetworkPolicy</code>，那是
+kindnet 沒有的能力。而且 <code>kubeProxyMode: none</code> 讓 Cilium 接手
+service 轉發，Hubble 才看得到 完整的連線脈絡。</p>
+<p><strong>三個 worker。</strong>
+不是為了算力，是為了<strong>讓流量跨節點</strong>。這件事在第 6 篇
+會變成關鍵：Cilium 的 native routing 下，同節點的 Pod 互連不經過
+<code>eth0</code>， Suricata 看不到。單節點叢集測 IDS
+規則會得到「規則沒問題但一筆都沒觸發」 的假象。</p>
+<p>建立：</p>
+<pre class="shell"><code>kind create cluster --config kind/cluster.yaml</code></pre>
+<h2 id="5-整個系列的部署順序">5. 整個系列的部署順序</h2>
+<p>順序不是隨便排的，有兩條相依鏈：</p>
+<pre><code>Cilium ──→ CCNP ──────────────────────┐
+   │                                   │
+   └─→ cert-manager ─→ step-ca ─→ Gateway
+                                       │
+                 SeaweedFS ─→ Loki ────┤
+                 Prometheus ───────────┼─→ Grafana Operator
+                 Alloy ────────────────┤
+                                       │
+                 Falco ────────────────┤
+                 Suricata ─────────────┼─→ Wazuh ─→ Grafana Alerting
+                 K8s Audit ────────────┘                │
+                                                        ▼
+                                                 Zulip / Mailpit</code></pre>
+<p><strong>網路策略要在應用之前先上。</strong>
+很多人（包括我）習慣最後才補 NetworkPolicy，
+結果是每裝一個元件就要回頭debug一次「為什麼連不到」。先把 default deny
+立起來、 再逐一放行，每個放行都有明確的理由，反而比較快。第 2
+篇會示範這個順序。</p>
+<p><strong>告警鏈要最後接。</strong>
+在偵測規則還沒調好之前就接上通知，只會得到一個被洗版的
+聊天室，然後你會把它靜音 —— 那就前功盡棄了。第 8
+篇會用實測數字說明這件事 有多容易發生。</p>
+<h2 id="小結">小結</h2>
+<ul>
+<li><strong>先畫地圖再動手</strong>：三個偵測來源、兩條資料路徑、一個出口。裝到第五個工具時
+還記得自己在幹嘛，靠的是這張圖而不是記憶力。</li>
+<li><strong>三個來源互補不是冗餘</strong>：主機、控制平面、網路，各自有對方看不到的盲點。
+判斷要不要再加一個來源，問的是「它能看到什麼別人看不到的」。</li>
+<li><strong>單機 kind
+的資源要自己算</strong>：<code>kubectl get nodes</code>
+會把同一份記憶體報成四份， 而 scheduler
+照著那個假數字排程，症狀是整台機器變慢而不是排程失敗。</li>
+</ul>
+<p>下一篇開始動手，從最底層的網路策略開始。</p>
+<!-- series:start -->
+
+<p>系列文：</p>
+<ul>
+<li><strong>一個人的 DevSecOps
+(1)：先畫地圖，再動手（本篇）</strong></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/02-zero-trust-network.md">一個人的
+DevSecOps (2)：零信任的地基</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/03-observability.md">一個人的
+DevSecOps (3)：看得見才管得住</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/04-falco-operator.md">一個人的
+DevSecOps (4)：主機層偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/05-k8s-audit.md">一個人的
+DevSecOps (5)：控制平面偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/06-suricata.md">一個人的
+DevSecOps (6)：網路層偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/07-wazuh-brain.md">一個人的
+DevSecOps (7)：從事件到告警</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/08-alerting-and-fatigue.md">一個人的
+DevSecOps (8)：最後一哩與告警疲勞</a></li>
+</ul>
+<!-- series:end -->
+
+<p>想要知道更多，可參考以下資源：</p>
+<ul>
+<li><a href="https://cilium.io/">Cilium</a></li>
+<li><a href="https://falco.org/">Falco</a></li>
+<li><a href="https://suricata.io/">Suricata</a></li>
+<li><a href="https://wazuh.com/">Wazuh</a></li>
+<li><a
+href="https://attack.mitre.org/matrices/enterprise/containers/">MITRE
+ATT&amp;CK for Containers</a></li>
+</ul>
+</body>
+</html>

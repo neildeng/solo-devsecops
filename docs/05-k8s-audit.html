@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>05-k8s-audit</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">05-k8s-audit</h1>
+</header>
+<h1 id="一個人的-devsecops-5控制平面偵測">一個人的 DevSecOps
+(5)：控制平面偵測</h1>
+<h2 id="背景說明">背景說明</h2>
+<p>Falco 看得到容器裡執行了什麼行程，但看不到<strong>誰呼叫了 Kubernetes
+API</strong>。 有人建立了一個
+<code>ClusterRoleBinding</code>、有人把某個 Pod 改成 privileged、 有人用
+<code>kubectl exec</code> 進了容器 ——
+這些都發生在控制平面，主機層看不到。</p>
+<p>Kubernetes 的稽核日誌（audit log）補的就是這一塊。Falco 有
+<code>k8saudit</code> plugin
+可以直接消費它，於是同一套規則引擎可以同時處理兩種來源。</p>
+<p>本文的主軸是一次真實的追查：<strong>我寫了 17 條 k8s_audit
+規則，一條都沒觸發。</strong>
+最後拆出<strong>四個獨立的根因</strong>，沒有一個會報錯。</p>
+<h2 id="環境必須">環境必須</h2>
+<ol type="1">
+<li>已完成第 4 篇（falco-operator + k8saudit plugin）</li>
+<li>能修改 kind 的叢集設定並重建（或能改 kube-apiserver 的
+manifest）</li>
+</ol>
+<h2 id="1-稽核鏈路">1. 稽核鏈路</h2>
+<pre><code>kube-apiserver ──(webhook)──→ Falco 的 k8saudit plugin ──→ 規則引擎
+       │
+       └── audit-policy.yaml 決定「哪些事件會被記錄」</code></pre>
+<p>兩端各要設定一次：</p>
+<p><strong>API Server 端</strong>（kind 的
+<code>kubeadmConfigPatches</code>）：</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">kubeadmConfigPatches</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="ch">|</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> ClusterConfiguration</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">apiServer</span><span class="kw">:</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">extraArgs</span><span class="kw">:</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">audit-policy-file</span><span class="kw">:</span><span class="at"> /etc/kubernetes/policies/audit-policy.yaml</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">audit-webhook-config-file</span><span class="kw">:</span><span class="at"> /etc/kubernetes/policies/audit-webhook.yaml</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">audit-webhook-batch-max-wait</span><span class="kw">:</span><span class="at"> 5s</span></span></code></pre></div>
+<p><strong>Falco 端</strong>（<code>Plugin</code> CR）：</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> artifact.falcosecurity.dev/v1alpha1</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Plugin</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> k8saudit</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> kube-security</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ociArtifact</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> ... </span><span class="kw">}</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">openParams</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;http://:9765/k8s-audit&quot;</span></span></code></pre></div>
+<p>加上一個 NodePort Service 讓 API Server 連得到。注意 <strong>operator
+的 <code>Falco</code> CR 沒有 service 欄位</strong>，這支 Service
+要自己維護：</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> falco-k8saudit-webhook</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> kube-security</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">type</span><span class="kw">:</span><span class="at"> NodePort</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># Local：webhook 要送到「本節點上的」falco，不要再跨節點轉發</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">externalTrafficPolicy</span><span class="kw">:</span><span class="at"> Local</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">selector</span><span class="kw">:</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">app.kubernetes.io/name</span><span class="kw">:</span><span class="at"> falco</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">port</span><span class="kw">:</span><span class="at"> </span><span class="dv">9765</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">targetPort</span><span class="kw">:</span><span class="at"> </span><span class="dv">9765</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nodePort</span><span class="kw">:</span><span class="at"> </span><span class="dv">30007</span></span></code></pre></div>
+<p>還有一條 CCNP —— 這是第 2 篇說過的「來源是節點不是 Pod」的案例：</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ingress</span><span class="kw">:</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">fromEntities</span><span class="kw">:</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">host</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">remote-node</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">toPorts</span><span class="kw">:</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">ports</span><span class="kw">:</span><span class="at"> </span><span class="kw">[{</span><span class="at"> </span><span class="fu">port</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;9765&quot;</span><span class="kw">,</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="fu"> </span><span class="at">TCP </span><span class="kw">}]</span></span></code></pre></div>
+<h2 id="2-症狀17-條規則0-次觸發">2. 症狀：17 條規則，0 次觸發</h2>
+<p>鏈路接好之後，Falco 的 k8s_audit 規則一條都不觸發。</p>
+<p>這類問題最難的地方在於：<strong>規則在、條件對、就是沒有輸出。</strong>
+沒有錯誤訊息， 沒有拒絕，沒有任何可以 grep 的字串。</p>
+<p>後來拆出四個獨立的根因，它們疊在一起，表面現象完全一樣。</p>
+<h2 id="3-根因一稽核政策沒記錄那個資源">3.
+根因一：稽核政策沒記錄那個資源</h2>
+<p>稽核政策的規則<strong>由上而下比對，第一條命中就決定
+level</strong>，而且 ——</p>
+<blockquote>
+<p><strong>沒有任何規則命中的事件不會被記錄。</strong></p>
+</blockquote>
+<p>如果你的政策裡沒有 catch-all（本系列刻意不放，避免 audit log 爆量），
+那麼任何沒被列舉到的資源，Falco 就永遠收不到它的事件。</p>
+<p>原本的政策漏了
+<code>serviceaccounts/token</code>、<code>daemonsets</code>
+的刪除等等，所以 對應的規則註定不會觸發。</p>
+<p>補上之後的政策長這樣（節錄）：</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> audit.k8s.io/v1</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Policy</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># ---- 排除：高頻且無安全價值的端點 ----</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># 必須排在所有 pods 規則之前。kubelet 的狀態回報頻率極高，</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># 不排除的話 pods 的稽核量會被它淹沒。</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">level</span><span class="kw">:</span><span class="at"> None</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">group</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;&quot;</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">resources</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">pods/status</span><span class="kw">,</span><span class="at"> pods/binding</span><span class="kw">,</span><span class="at"> pods/log</span><span class="kw">]</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">level</span><span class="kw">:</span><span class="at"> None</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">nonResourceURLs</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;/healthz*&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;/readyz*&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;/livez*&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;/version&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;/metrics&quot;</span><span class="kw">]</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># ---- Pod 建立與刪除 ----</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">level</span><span class="kw">:</span><span class="at"> RequestResponse</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">group</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;&quot;</span></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">resources</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;pods&quot;</span><span class="kw">]</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">verbs</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;create&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;delete&quot;</span><span class="kw">]</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># ---- RBAC 變更 ----</span></span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">level</span><span class="kw">:</span><span class="at"> RequestResponse</span></span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">group</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;rbac.authorization.k8s.io&quot;</span></span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">resources</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">clusterroles</span><span class="kw">,</span><span class="at"> clusterrolebindings</span><span class="kw">,</span><span class="at"> roles</span><span class="kw">,</span><span class="at"> rolebindings</span><span class="kw">]</span></span></code></pre></div>
+<p>排除規則放最前面是重點。<code>pods/status</code> 是 kubelet
+的狀態回報，頻率極高， 不先排除的話真正重要的 <code>pods</code>
+事件會被它淹沒。</p>
+<h2 id="4-根因二level-不夠欄位取不到">4. 根因二：level
+不夠，欄位取不到</h2>
+<p>第二個坑藏在 <code>level</code> 這個欄位裡。</p>
+<p>Falco 的規則會比對請求的<strong>內容</strong>，例如：</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">rule</span><span class="kw">:</span><span class="at"> KOAD S06 Create Privileged Pod</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> </span><span class="ch">&gt;</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">    kevt and koad_audit_create and ka.target.resource = pods and</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">    ka.req.pod.containers.privileged intersects (true)</span></span></code></pre></div>
+<p><code>ka.req.pod.containers.privileged</code>
+這個欄位來自<strong>請求的 body</strong>。 如果稽核 level 只設到
+<code>Metadata</code>，body 根本不會被記錄 ——</p>
+<blockquote>
+<p><strong>規則會永遠不匹配，而且沒有任何錯誤訊息。</strong></p>
+</blockquote>
+<p>所以凡是會用到 <code>ka.req.*</code> 的規則，對應的資源都要設成
+<code>RequestResponse</code>：</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">level</span><span class="kw">:</span><span class="at"> RequestResponse      # ← 不是 Metadata</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">resources</span><span class="kw">:</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">group</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;&quot;</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">resources</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;pods&quot;</span><span class="kw">]</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">verbs</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;create&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;delete&quot;</span><span class="kw">]</span></span></code></pre></div>
+<p>代價是 audit log 會變大，所以才要靠前面的排除規則把高頻雜訊砍掉。
+<strong>這兩件事是配套的</strong>：逐一列舉需要的資源 + 列舉到的用高
+level。</p>
+<h2 id="5-根因三內建規則先載入並搶走事件">5.
+根因三：內建規則先載入並搶走事件</h2>
+<p>這就是第 4 篇講的規則遮蔽，在 audit 來源上再出現一次。</p>
+<p>追查的關鍵是<strong>找到對照組</strong>。17
+條規則裡有一條會觸發：S09（ClusterRoleBinding
+建立）。於是問題從「為什麼都不觸發」變成一個具體得多的問題：</p>
+<blockquote>
+<p><strong>S09 和其他 16 條差在哪？</strong></p>
+</blockquote>
+<p>答案是：S09
+的內建競爭者優先級太低，在預設設定下<strong>根本沒有被載入</strong>，
+所以沒有人跟它搶。其他 16 條的內建競爭者都載入了，而且先載入。</p>
+<p>這個方法值得單獨記下來：</p>
+<blockquote>
+<p><strong>與其逐一驗證假設，不如先找出一個「成功的案例」，再問它和失敗案例的
+差異在哪。一個能動的對照組，比五次猜測有用。</strong></p>
+</blockquote>
+<p>解法就是第 4 篇的 <code>Rulesfile.priority</code>
+排序，加上檔尾的覆寫：</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># rules-k8saudit.yaml 的最後</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">rule</span><span class="kw">:</span><span class="at"> Create Privileged Pod</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div>
+<h2 id="6-根因四規則裡的命名空間清單要跟著你的部署走">6.
+根因四：規則裡的命名空間清單要跟著你的部署走</h2>
+<p>有一類規則的條件是「有人動了安全元件所在的命名空間」。它靠一個 macro
+列舉那些命名空間：</p>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_security_namespaces</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> ka.target.namespace in (falco, kube-system, security)</span></span></code></pre></div>
+<p>上游範例預設把 Falco 裝在 <code>falco</code>、其他安全元件放在
+<code>security</code>。 <strong>本系列不是這樣部署的</strong> —— 第 4
+篇把所有安全元件都放在 <code>kube-security</code>， 可觀測性在
+<code>observability</code>。</p>
+<p>於是這個 macro
+比對的是三個在本叢集<strong>不存在</strong>的名字，規則永遠不會觸發。</p>
+<p>改成實際的部署位置：</p>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_security_namespaces</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> ka.target.namespace in (kube-security, observability, kyverno)</span></span></code></pre></div>
+<h3 id="失敗的方向是危險的那一邊">失敗的方向是危險的那一邊</h3>
+<p>這個坑沒什麼技術含量，但它的失敗方向值得警覺：</p>
+<blockquote>
+<p>命名空間寫錯時，規則是<strong>不觸發</strong>，不是誤觸發。</p>
+</blockquote>
+<p>也就是說，你不會看到一堆假警報提醒你設定錯了；你會看到一片安靜，然後
+以為「沒有人動安全元件，很好」。<strong>監控自身的規則失效，症狀和「很平安」
+長得一模一樣。</strong></p>
+<h3 id="換命名空間時要一起改的地方">換命名空間時要一起改的地方</h3>
+<p>命名空間不是只出現在 Falco
+規則裡。如果你把元件裝在和本系列不同的位置， 下面這些地方都要跟著改 ——
+它們全部都是<strong>寫死字串</strong>，沒有一個會因為名字
+不存在而報錯：</p>
+<ul>
+<li><strong>Falco 規則 macro</strong>
+<ul>
+<li>長什麼樣：<code>ka.target.namespace in (...)</code></li>
+<li>寫錯的症狀：規則不觸發</li>
+</ul></li>
+<li><strong>CCNP 的選擇器</strong>
+<ul>
+<li>長什麼樣：<code>k8s:io.kubernetes.pod.namespace: kube-security</code></li>
+<li>寫錯的症狀：流量被 default deny 擋掉，<code>i/o timeout</code></li>
+</ul></li>
+<li><strong>Alloy 的 syslog 目的地</strong>
+<ul>
+<li>長什麼樣：<code>wazuh-manager-worker.kube-security.svc.cluster.local</code></li>
+<li>寫錯的症狀：連不上，但 exporter 會一直重試</li>
+</ul></li>
+<li><strong>Grafana 資料來源 URL</strong>
+<ul>
+<li>長什麼樣：<code>https://wazuh-indexer.kube-security.svc.cluster.local:9200</code></li>
+<li>寫錯的症狀：datasource 測試失敗</li>
+</ul></li>
+<li><strong>稽核政策的 namespace 條件</strong>
+<ul>
+<li>長什麼樣：<code>namespaces: ["kube-security"]</code></li>
+<li>寫錯的症狀：事件不被記錄</li>
+</ul></li>
+</ul>
+<p>實務上最省事的做法是<strong>先把命名空間決定下來，再開始部署</strong>，並且用一次
+全域搜尋確認沒有漏網的：</p>
+<pre class="shell"><code># 列出所有寫死命名空間的地方，確認每一個都是你要的
+rg -n &#39;kube-security|observability&#39; manifests/ values/ charts/ kind/</code></pre>
+<p>如果已經部署到一半才要改，至少把上表走一遍。<strong>CCNP
+那一列會最先讓你發現 問題</strong>（連線直接斷），Falco 規則那一列最晚
+—— 因為它不會發出任何聲音。</p>
+<h3 id="順帶一提這個-macro-的語意">順帶一提：這個 macro 的語意</h3>
+<p>值得花十秒鐘想清楚它在規則裡扮演什麼角色：</p>
+<div class="sourceCode" id="cb13"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">rule</span><span class="kw">:</span><span class="at"> KOAD S23 Security Tooling Modified</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> </span><span class="ch">&gt;</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="at">    kevt and koad_audit_delete and</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="at">    koad_security_namespaces and</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="at">    ka.target.resource in (daemonsets, deployments)</span></span></code></pre></div>
+<p>它是一個<strong>標的清單</strong>，不是排除清單。清單裡應該放的是「被動到就該警覺」
+的命名空間 —— 也就是你的偵測元件自己住的地方。如果之後你把某個安全元件
+搬家、或新增一個（例如導入
+Kyverno），<strong>記得回來更新這份清單</strong>，否則
+那個元件就脫離了自我監控的範圍。</p>
+<h2 id="7-第五個坑我自己加的規則把-critical-吞掉了">7.
+第五個坑：我自己加的規則把 Critical 吞掉了</h2>
+<p>這一個發生在下游（Wazuh，第 7
+篇會細談），但它屬於同一個家族，放在這裡講。</p>
+<p>為了分類 audit 事件，我在 Wazuh 加了一條 level 0 的規則：</p>
+<div class="sourceCode" id="cb14"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100120&quot;</span> <span class="ot">level=</span><span class="st">&quot;0&quot;</span>&gt;</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_sid</span>&gt;100100&lt;/<span class="kw">if_sid</span>&gt;</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">field</span> <span class="ot">name=</span><span class="st">&quot;source&quot;</span>&gt;^k8s_audit$&lt;/<span class="kw">field</span>&gt;</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Falco k8s_audit: 事件已解碼&lt;/<span class="kw">description</span>&gt;</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span></code></pre></div>
+<p>level 0 = 只分類，不告警。本意是避免每筆事件都變成噪音。</p>
+<p><strong>結果是所有 Critical 的 audit 事件被靜默吞掉。</strong> S09
+觸發了 Critical， 只命中 100120，完全不產生告警。</p>
+<p>而這個缺口在表面上完全看不出來，因為 <strong>syscall 的 Critical
+不受影響</strong> （100120 要求 <code>source=k8s_audit</code>）——
+告警總數照常成長，你不會覺得有問題。</p>
+<p>解法是在它下面補一條 Critical 的規則：</p>
+<div class="sourceCode" id="cb15"><pre
+class="sourceCode xml"><code class="sourceCode xml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100125&quot;</span> <span class="ot">level=</span><span class="st">&quot;12&quot;</span>&gt;</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_sid</span>&gt;100120&lt;/<span class="kw">if_sid</span>&gt;</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">field</span> <span class="ot">name=</span><span class="st">&quot;priority&quot;</span>&gt;^Critical$&lt;/<span class="kw">field</span>&gt;</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Falco k8s_audit Critical: $(rule)&lt;/<span class="kw">description</span>&gt;</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span></code></pre></div>
+<h2 id="8-驗證用真的操作觸發">8. 驗證：用真的操作觸發</h2>
+<p>稽核規則的驗證沒有捷徑，就是真的做一次那個動作。</p>
+<pre class="shell"><code># S06：建立特權 Pod
+kubectl run priv-probe --image=busybox:1.36 --restart=Never -n default \
+  --overrides=&#39;{&quot;spec&quot;:{&quot;containers&quot;:[{&quot;name&quot;:&quot;p&quot;,&quot;image&quot;:&quot;busybox:1.36&quot;,&quot;securityContext&quot;:{&quot;privileged&quot;:true},&quot;command&quot;:[&quot;sh&quot;,&quot;-c&quot;,&quot;sleep 3&quot;]}]}}&#39;
+
+# S09：建立 ClusterRoleBinding
+kubectl create clusterrolebinding probe-crb \
+  --clusterrole=view --serviceaccount=default:default
+
+# 清理
+kubectl delete pod priv-probe -n default
+kubectl delete clusterrolebinding probe-crb</code></pre>
+<p>然後看輸出：</p>
+<pre class="shell"><code>kubectl -n kube-security logs ds/falco -c falco --tail=50 | grep -i koad</code></pre>
+<p>先確認 webhook 本身是通的（四個節點都該在 endpoints 裡）：</p>
+<pre class="shell"><code>kubectl -n kube-security get endpoints falco-k8saudit-webhook</code></pre>
+<h2 id="9-剩下的-10-條以及為什麼那不是-bug">9. 剩下的 10
+條，以及為什麼那不是 bug</h2>
+<p>追查結束時的狀態：可觸發的規則從 0 條變成 3 條實測（S06、S09、S23）
+加 2 條待演練。<strong>剩下 10 條卡在排除條件。</strong></p>
+<p>那些規則都有這樣的 macro：</p>
+<div class="sourceCode" id="cb19"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_not_system_user</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> </span><span class="ch">&gt;</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="at">    not ka.user.name startswith &quot;system:&quot; and</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="at">    not ka.user.name in (kubernetes-admin)</span></span></code></pre></div>
+<p>而在一個單人的 lab 裡，<code>kubernetes-admin</code> +
+<code>system:*</code> <strong>涵蓋了全部的 操作者</strong> —— 我自己就是
+<code>kubernetes-admin</code>。</p>
+<p>這不是
+bug，是設計。正式環境排除管理員是對的：你不會希望每次維運操作都
+觸發告警。要演練那些規則，得建立專用的測試身分：一個非 admin 的
+ServiceAccount 加對應的 kubeconfig。</p>
+<p><strong>把「無法演練」與「規則壞掉」分開，是這類排查裡很重要的一步。</strong></p>
+<h2 id="小結">小結</h2>
+<ul>
+<li><strong>四個根因，表面現象完全一樣</strong>：稽核政策沒記錄該資源、level
+不夠所以 <code>ka.req.*</code>
+取不到、內建規則先載入搶走事件、命名空間清單沒跟著實際部署調整。
+四個都不報錯。</li>
+<li><strong>找對照組比逐一驗證假設有效</strong>：17
+條規則裡唯一會觸發的那條，讓問題從 「為什麼都不觸發」變成「它和其他 16
+條差在哪」—— 後者是可回答的問題。</li>
+<li><strong>level 0
+的分類規則會吞掉告警</strong>：而且如果另一條路徑的告警照常流動，
+你完全看不出有缺口。加分類規則時要同時確認「高等級的還走得出去」。</li>
+<li><strong>命名空間寫死在很多地方</strong>：Falco macro、CCNP
+選擇器、Alloy 目的地、 Grafana
+資料來源、稽核政策。先決定命名空間再部署，改動時用一次全域搜尋
+確認。要注意監控自身的規則失效時是「一片安靜」，和「很平安」長得一樣。</li>
+<li><strong>排除條件涵蓋所有操作者，不是 bug</strong>：在 lab
+裡要演練就得建立專用的
+非管理員身分。把「無法演練」與「規則壞掉」分開。</li>
+</ul>
+<p>下一篇接第三個來源：網路層的 Suricata。</p>
+<!-- series:start -->
+
+<p>系列文：</p>
+<ul>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/01-overview.md">一個人的
+DevSecOps (1)：先畫地圖，再動手</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/02-zero-trust-network.md">一個人的
+DevSecOps (2)：零信任的地基</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/03-observability.md">一個人的
+DevSecOps (3)：看得見才管得住</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/04-falco-operator.md">一個人的
+DevSecOps (4)：主機層偵測</a></li>
+<li><strong>一個人的 DevSecOps (5)：控制平面偵測（本篇）</strong></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/06-suricata.md">一個人的
+DevSecOps (6)：網路層偵測</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/07-wazuh-brain.md">一個人的
+DevSecOps (7)：從事件到告警</a></li>
+<li><a
+href="https://github.com/neildeng/solo-devsecops/blob/main/articles/08-alerting-and-fatigue.md">一個人的
+DevSecOps (8)：最後一哩與告警疲勞</a></li>
+</ul>
+<!-- series:end -->
+
+<p>想要知道更多，可參考以下資源：</p>
+<ul>
+<li><a
+href="https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/">Kubernetes
+Auditing</a></li>
+<li><a
+href="https://github.com/falcosecurity/plugins/tree/main/plugins/k8saudit">Falco
+k8saudit plugin</a></li>
+<li><a
+href="https://falco.org/docs/reference/rules/supported-fields/">Falco
+Supported Fields for Conditions</a></li>
+</ul>
+</body>
+</html>
