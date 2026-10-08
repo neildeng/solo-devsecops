@@ -173,23 +173,36 @@ def convert(path: pathlib.Path, limit: int, out: pathlib.Path) -> None:
 
 
 def write_index(out: pathlib.Path, files: list[pathlib.Path]) -> None:
-    """GitHub Pages 的目錄頁。每一篇都附可直接丟給 Medium import 的網址。"""
+    """系列的目錄頁。這是公開頁面，不要寫轉檔流程之類的內部事項。"""
     rows = []
     for f in files:
         title = next((l[2:].strip() for l in f.read_text().split("\n")
                       if l.startswith("# ")), f.stem)
+        # 清單自己有編號，把標題前面的「一個人的 DevSecOps (N)：」拿掉
+        title = re.sub(r"^.*?\(\d+\)：", "", title)
         rows.append(f'<li><a href="{f.stem}.html">{title}</a></li>')
+
     (out / "index.html").write_text(
-        "<!doctype html>\n<html lang=\"zh-Hant\"><head><meta charset=\"utf-8\">"
-        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        '<!doctype html>\n<html lang="zh-Hant"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
         "<title>一個人的 DevSecOps</title>"
         f"<style>{CSS}</style></head><body>\n"
         "<h1>一個人的 DevSecOps</h1>\n"
-        "<p>這些頁面是給 Medium 用的轉檔版本 —— 可以直接貼上，"
-        "或把單篇網址丟進 <a href=\"https://medium.com/p/import\">Medium 的 import</a>。</p>\n"
-        "<p>原始碼與完整的 Markdown 在 "
-        "<a href=\"https://github.com/neildeng/solo-devsecops\">github.com/neildeng/solo-devsecops</a>。</p>\n"
-        "<ol>\n" + "\n".join(rows) + "\n</ol>\n</body></html>\n")
+        "<p>在一台筆電上，用 kind 搭出一套完整的 Kubernetes 偵測與告警鏈，"
+        "並且把每一個接點的理由寫清楚。</p>\n"
+        "<p>「一個人」不是修飾語，是整套東西的設計前提。它不是企業級 SOC 的縮小版"
+        " —— 企業級的那套預設有人輪值、有人調規則、有人在告警進來的時候看一眼。"
+        "這裡沒有，所以每個決定都要先過一關：這個東西，一個人維護得下去嗎？</p>\n"
+        "<p>不是「照著貼就會動」的教學，是「為什麼要這樣接、不這樣接會怎樣」的紀錄。</p>\n"
+        '<p><img src="https://raw.githubusercontent.com/neildeng/solo-devsecops/'
+        'main/articles/images/01-architecture.png" alt="整體架構"></p>\n'
+        "<h2>系列文</h2>\n"
+        "<ol>\n" + "\n".join(rows) + "\n</ol>\n"
+        "<hr>\n"
+        "<p>所有設定與原始碼："
+        '<a href="https://github.com/neildeng/solo-devsecops">'
+        "github.com/neildeng/solo-devsecops</a></p>\n"
+        "</body></html>\n")
 
 
 def main() -> int:

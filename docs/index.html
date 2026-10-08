@@ -12,16 +12,21 @@ img { max-width: 100%; }
 hr { border: none; border-top: 1px solid #ddd; margin: 2.5em 0; }
 </style></head><body>
 <h1>一個人的 DevSecOps</h1>
-<p>這些頁面是給 Medium 用的轉檔版本 —— 可以直接貼上，或把單篇網址丟進 <a href="https://medium.com/p/import">Medium 的 import</a>。</p>
-<p>原始碼與完整的 Markdown 在 <a href="https://github.com/neildeng/solo-devsecops">github.com/neildeng/solo-devsecops</a>。</p>
+<p>在一台筆電上，用 kind 搭出一套完整的 Kubernetes 偵測與告警鏈，並且把每一個接點的理由寫清楚。</p>
+<p>「一個人」不是修飾語，是整套東西的設計前提。它不是企業級 SOC 的縮小版 —— 企業級的那套預設有人輪值、有人調規則、有人在告警進來的時候看一眼。這裡沒有，所以每個決定都要先過一關：這個東西，一個人維護得下去嗎？</p>
+<p>不是「照著貼就會動」的教學，是「為什麼要這樣接、不這樣接會怎樣」的紀錄。</p>
+<p><img src="https://raw.githubusercontent.com/neildeng/solo-devsecops/main/articles/images/01-architecture.png" alt="整體架構"></p>
+<h2>系列文</h2>
 <ol>
-<li><a href="01-overview.html">一個人的 DevSecOps (1)：先畫地圖，再動手</a></li>
-<li><a href="02-zero-trust-network.html">一個人的 DevSecOps (2)：零信任的地基</a></li>
-<li><a href="03-observability.html">一個人的 DevSecOps (3)：看得見才管得住</a></li>
-<li><a href="04-falco-operator.html">一個人的 DevSecOps (4)：主機層偵測</a></li>
-<li><a href="05-k8s-audit.html">一個人的 DevSecOps (5)：控制平面偵測</a></li>
-<li><a href="06-suricata.html">一個人的 DevSecOps (6)：網路層偵測</a></li>
-<li><a href="07-wazuh-brain.html">一個人的 DevSecOps (7)：從事件到告警</a></li>
-<li><a href="08-alerting-and-fatigue.html">一個人的 DevSecOps (8)：最後一哩與告警疲勞</a></li>
+<li><a href="01-overview.html">先畫地圖，再動手</a></li>
+<li><a href="02-zero-trust-network.html">零信任的地基</a></li>
+<li><a href="03-observability.html">看得見才管得住</a></li>
+<li><a href="04-falco-operator.html">主機層偵測</a></li>
+<li><a href="05-k8s-audit.html">控制平面偵測</a></li>
+<li><a href="06-suricata.html">網路層偵測</a></li>
+<li><a href="07-wazuh-brain.html">從事件到告警</a></li>
+<li><a href="08-alerting-and-fatigue.html">最後一哩與告警疲勞</a></li>
 </ol>
+<hr>
+<p>所有設定與原始碼：<a href="https://github.com/neildeng/solo-devsecops">github.com/neildeng/solo-devsecops</a></p>
 </body></html>
