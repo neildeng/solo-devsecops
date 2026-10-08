@@ -1,0 +1,46 @@
+# 系列文的單一事實來源。
+#
+# 發佈一篇就把它的 url 填回這裡，然後執行：
+#
+#   ./articles/update-series-links.sh
+#
+# 八篇文章結尾的「系列文：」區塊與 README 的文章表格會一次更新 ——
+# 不要手動改那些區塊，下次執行腳本就會被蓋掉。
+#
+# url 留空的篇目會連到 repo 裡的 Markdown；填了就連到 Medium。
+# 每一篇在自己的清單裡會顯示為粗體並標上「（本篇）」，不加連結。
+
+series: 一個人的 DevSecOps
+articles:
+
+  - file: 01-overview.md
+    title: 先畫地圖，再動手
+    url: ""
+
+  - file: 02-zero-trust-network.md
+    title: 零信任的地基
+    url: ""
+
+  - file: 03-observability.md
+    title: 看得見才管得住
+    url: ""
+
+  - file: 04-falco-operator.md
+    title: 主機層偵測
+    url: ""
+
+  - file: 05-k8s-audit.md
+    title: 控制平面偵測
+    url: ""
+
+  - file: 06-suricata.md
+    title: 網路層偵測
+    url: ""
+
+  - file: 07-wazuh-brain.md
+    title: 從事件到告警
+    url: ""
+
+  - file: 08-alerting-and-fatigue.md
+    title: 最後一哩與告警疲勞
+    url: ""

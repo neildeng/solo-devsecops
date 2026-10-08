@@ -431,16 +431,18 @@ Basic Auth 的憑證就這樣以 base64 在叢集網路裡傳輸。
 如果你也想試，所有設定都在 repo 裡。歡迎指出我寫錯的地方——這個領域
 一個人走得慢，一起走才走得遠。
 
+<!-- series:start -->
 系列文：
 
-- 一個人的 DevSecOps (1)：先畫地圖，再動手
-- 一個人的 DevSecOps (2)：零信任的地基
-- 一個人的 DevSecOps (3)：看得見才管得住
-- 一個人的 DevSecOps (4)：主機層偵測
-- 一個人的 DevSecOps (5)：控制平面偵測
-- 一個人的 DevSecOps (6)：網路層偵測
-- 一個人的 DevSecOps (7)：從事件到告警
-- 一個人的 DevSecOps (8)：最後一哩與告警疲勞
+- [一個人的 DevSecOps (1)：先畫地圖，再動手](01-overview.md)
+- [一個人的 DevSecOps (2)：零信任的地基](02-zero-trust-network.md)
+- [一個人的 DevSecOps (3)：看得見才管得住](03-observability.md)
+- [一個人的 DevSecOps (4)：主機層偵測](04-falco-operator.md)
+- [一個人的 DevSecOps (5)：控制平面偵測](05-k8s-audit.md)
+- [一個人的 DevSecOps (6)：網路層偵測](06-suricata.md)
+- [一個人的 DevSecOps (7)：從事件到告警](07-wazuh-brain.md)
+- **一個人的 DevSecOps (8)：最後一哩與告警疲勞（本篇）**
+<!-- series:end -->
 
 想要知道更多，可參考以下資源：
 

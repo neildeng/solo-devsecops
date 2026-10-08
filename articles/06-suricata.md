@@ -433,16 +433,18 @@ kubectl exec -n kube-security ds/suricata -c suricata -- ls -lh /var/log/suricat
 
 下一篇把三個來源匯進 Wazuh，讓它決定什麼才叫「告警」。
 
+<!-- series:start -->
 系列文：
 
-- 一個人的 DevSecOps (1)：先畫地圖，再動手
-- 一個人的 DevSecOps (2)：零信任的地基
-- 一個人的 DevSecOps (3)：看得見才管得住
-- 一個人的 DevSecOps (4)：主機層偵測
-- 一個人的 DevSecOps (5)：控制平面偵測
-- 一個人的 DevSecOps (6)：網路層偵測
-- 一個人的 DevSecOps (7)：從事件到告警
-- 一個人的 DevSecOps (8)：最後一哩與告警疲勞
+- [一個人的 DevSecOps (1)：先畫地圖，再動手](01-overview.md)
+- [一個人的 DevSecOps (2)：零信任的地基](02-zero-trust-network.md)
+- [一個人的 DevSecOps (3)：看得見才管得住](03-observability.md)
+- [一個人的 DevSecOps (4)：主機層偵測](04-falco-operator.md)
+- [一個人的 DevSecOps (5)：控制平面偵測](05-k8s-audit.md)
+- **一個人的 DevSecOps (6)：網路層偵測（本篇）**
+- [一個人的 DevSecOps (7)：從事件到告警](07-wazuh-brain.md)
+- [一個人的 DevSecOps (8)：最後一哩與告警疲勞](08-alerting-and-fatigue.md)
+<!-- series:end -->
 
 想要知道更多，可參考以下資源：
 

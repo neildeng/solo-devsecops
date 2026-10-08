@@ -50,16 +50,18 @@ Wazuh 的規則層負責分級、爆發收斂、抑制與 MITRE ATT&CK 對應，
 
 完整的八篇在 [`articles/`](articles/)：
 
-| # | 篇名 | 主題 |
-|---|---|---|
-| 1 | [先畫地圖，再動手](articles/01-overview.md) | 架構心智模型、單機 kind 的資源陷阱 |
-| 2 | [零信任的地基](articles/02-zero-trust-network.md) | Cilium CCNP、default deny、四個不報錯的坑 |
-| 3 | [看得見才管得住](articles/03-observability.md) | Alloy / Loki / Prometheus / Grafana Operator |
-| 4 | [主機層偵測](articles/04-falco-operator.md) | falco-operator、規則遮蔽、OCI mirror |
-| 5 | [控制平面偵測](articles/05-k8s-audit.md) | 稽核政策、17 條規則不觸發的四個根因 |
-| 6 | [網路層偵測](articles/06-suricata.md) | Suricata chart、先量再調 |
-| 7 | [從事件到告警](articles/07-wazuh-brain.md) | Wazuh 規則層、爆發收斂 |
-| 8 | [最後一哩與告警疲勞](articles/08-alerting-and-fatigue.md) | Grafana alerting、噪音治理、總結 |
+<!-- series:start -->
+| # | 篇名 | 主題 | Medium |
+|---|---|---|---|
+| 1 | [先畫地圖，再動手](articles/01-overview.md) | 架構心智模型、單機 kind 的資源陷阱 | — |
+| 2 | [零信任的地基](articles/02-zero-trust-network.md) | Cilium CCNP、default deny、四個不報錯的坑 | — |
+| 3 | [看得見才管得住](articles/03-observability.md) | Alloy / Loki / Prometheus / Grafana Operator | — |
+| 4 | [主機層偵測](articles/04-falco-operator.md) | falco-operator、規則遮蔽、OCI mirror | — |
+| 5 | [控制平面偵測](articles/05-k8s-audit.md) | 稽核政策、17 條規則不觸發的四個根因 | — |
+| 6 | [網路層偵測](articles/06-suricata.md) | Suricata chart、先量再調 | — |
+| 7 | [從事件到告警](articles/07-wazuh-brain.md) | Wazuh 規則層、爆發收斂 | — |
+| 8 | [最後一哩與告警疲勞](articles/08-alerting-and-fatigue.md) | Grafana alerting、噪音治理、總結 | — |
+<!-- series:end -->
 
 ## 目錄結構
 

@@ -45,7 +45,18 @@
 - 第 7 篇：Wazuh 的 MITRE ATT&CK 對應畫面
 - 第 8 篇：Zulip 收到告警的樣子
 
-**三、連結。** 「系列文：」區塊的 URL 要在發佈後回填。
+**三、連結。** 不要手動改各篇結尾的「系列文：」區塊，也不要改 README 的
+文章表格 —— 那兩處由腳本產生。發佈一篇就把 URL 填進 [`series.yaml`](series.yaml)，
+然後執行：
+
+```shell
+./articles/update-series-links.sh
+```
+
+八篇文章與 README 會一次更新。url 留空的篇目連到 repo 裡的 Markdown，
+填了就連到 Medium；每一篇在自己的清單裡顯示為粗體並標上「（本篇）」。
+
+`--check` 只檢查不寫檔，有差異時回傳非 0，可以掛進 CI。
 
 **四、原始碼。** 發佈時請在每篇結尾附上
 <https://github.com/neildeng/solo-devsecops>。
