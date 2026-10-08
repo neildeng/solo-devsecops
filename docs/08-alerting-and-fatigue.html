@@ -323,18 +323,12 @@ curl -s http://127.0.0.1:8025/api/v1/messages | jq &#39;.messages[0] | {Subject,
 </ul>
 <h3 id="兩層處理順序不能顛倒">兩層處理，順序不能顛倒</h3>
 <ul>
-<li><strong><strong>規則層（治本）</strong></strong>
-<ul>
-<li>做法：排除健康探針、排除 <code>runc</code>、把 wazuh-agent
-加進既有的基礎設施清單</li>
-<li>效果：1738/2000 → 3 分鐘 12 筆</li>
-</ul></li>
-<li><strong><strong>通道層</strong></strong>
-<ul>
-<li>做法：<code>minimumpriority</code> 由 <code>notice</code> 改為
-<code>critical</code></li>
-<li>效果：Warning/Error 不再進聊天室</li>
-</ul></li>
+<li><strong><strong>規則層（治本）</strong></strong> —
+做法：排除健康探針、排除 <code>runc</code>、把 wazuh-agent
+加進既有的基礎設施清單；效果：1738/2000 → 3 分鐘 12 筆</li>
+<li><strong><strong>通道層</strong></strong> —
+做法：<code>minimumpriority</code> 由 <code>notice</code> 改為
+<code>critical</code>；效果：Warning/Error 不再進聊天室</li>
 </ul>
 <p><strong>順序不能顛倒。</strong> 只調門檻的話，噪音仍然灌進
 Loki、Wazuh 與索引，
@@ -441,26 +435,14 @@ mirror</li>
 <p><strong>二、靜態證據不能證明動態行為。</strong></p>
 <p>這條在系列裡出現了四次，每次換一個面貌：</p>
 <ul>
-<li><strong><code>status: ApplySuccessful</code></strong>
-<ul>
-<li>以為：儀表板會動</li>
-<li>實際：只證明寫進去了</li>
-</ul></li>
-<li><strong>規則載入成功</strong>
-<ul>
-<li>以為：規則會觸發</li>
-<li>實際：可能被遮蔽</li>
-</ul></li>
-<li><strong>檔案 grep 得到新內容</strong>
-<ul>
-<li>以為：規則生效了</li>
-<li>實際：analysisd 還抱著舊的</li>
-</ul></li>
-<li><strong>中間節點都健康</strong>
-<ul>
-<li>以為：鏈路是通的</li>
-<li>實際：最後一跳沒接</li>
-</ul></li>
+<li><strong><code>status: ApplySuccessful</code></strong> —
+以為：儀表板會動；實際：只證明寫進去了</li>
+<li><strong>規則載入成功</strong> —
+以為：規則會觸發；實際：可能被遮蔽</li>
+<li><strong>檔案 grep 得到新內容</strong> —
+以為：規則生效了；實際：analysisd 還抱著舊的</li>
+<li><strong>中間節點都健康</strong> —
+以為：鏈路是通的；實際：最後一跳沒接</li>
 </ul>
 <blockquote>
 <p><strong>中間節點的健康狀態，不能加總成鏈路的健康狀態。</strong></p>

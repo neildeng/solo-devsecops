@@ -103,26 +103,14 @@
 之前，先把這一層立起來。</p>
 <p>這一層有四個角色，分工很清楚：</p>
 <ul>
-<li><strong>蒐集</strong>
-<ul>
-<li>元件：Alloy</li>
-<li>負責：從節點把日誌與指標撈出來</li>
-</ul></li>
-<li><strong>日誌倉儲</strong>
-<ul>
-<li>元件：Loki + SeaweedFS</li>
-<li>負責：全量原始日誌，供事後獵捕</li>
-</ul></li>
-<li><strong>指標倉儲</strong>
-<ul>
-<li>元件：Prometheus</li>
-<li>負責：時序數字，供趨勢與告警</li>
-</ul></li>
-<li><strong>呈現</strong>
-<ul>
-<li>元件：Grafana Operator</li>
-<li>負責：儀表板、資料來源、告警 —— 全部用 CR 管理</li>
-</ul></li>
+<li><strong>蒐集</strong> —
+元件：Alloy；負責：從節點把日誌與指標撈出來</li>
+<li><strong>日誌倉儲</strong> — 元件：Loki +
+SeaweedFS；負責：全量原始日誌，供事後獵捕</li>
+<li><strong>指標倉儲</strong> —
+元件：Prometheus；負責：時序數字，供趨勢與告警</li>
+<li><strong>呈現</strong> — 元件：Grafana
+Operator；負責：儀表板、資料來源、告警 —— 全部用 CR 管理</li>
 </ul>
 <p>本文的主軸是：<strong>怎麼確認它真的看得見。</strong>
 這聽起來像廢話，但本文會示範
@@ -260,21 +248,10 @@ class="sourceCode yaml"><code><span id="cb9-1"><a href="#cb9-1" aria-hidden="tru
 endpoint」。問題是有一整類 target <strong>不是 Pod
 endpoint</strong>：</p>
 <ul>
-<li><strong>kubelet</strong>
-<ul>
-<li>埠：10250</li>
-<li>跑在哪：節點</li>
-</ul></li>
-<li><strong>node-exporter</strong>
-<ul>
-<li>埠：9100</li>
-<li>跑在哪：hostNetwork</li>
-</ul></li>
-<li><strong>cilium-agent / envoy</strong>
-<ul>
-<li>埠：9962-9965</li>
-<li>跑在哪：hostNetwork</li>
-</ul></li>
+<li><strong>kubelet</strong> — 埠：10250；跑在哪：節點</li>
+<li><strong>node-exporter</strong> — 埠：9100；跑在哪：hostNetwork</li>
+<li><strong>cilium-agent / envoy</strong> —
+埠：9962-9965；跑在哪：hostNetwork</li>
 </ul>
 <p>它們的流量目的地是 <strong>node IP</strong>，<code>toEndpoints</code>
 涵蓋不到。補上：</p>

@@ -79,21 +79,25 @@ def table_to_pre(head: list[str], body: list[list[str]]) -> list[str]:
 
 
 def table_to_list(head: list[str], body: list[list[str]]) -> list[str]:
-    """太寬的表格 → 巢狀清單。Medium 支援一層縮排，而且不會水平捲動。
+    """表格 → 單層清單。
 
-    第一欄當項目標題，其餘欄位以「欄名：值」列在下面；兩欄的表格直接併成一行。
+    刻意不用巢狀：Medium 會把巢狀清單壓平，而且在每一組的結尾多生一個
+    空項目。所以一列一個項目，第一欄當標題，其餘欄位以「欄名：值」
+    串在同一行 —— 文字會自動換行，不像程式碼區塊會被截掉。
     """
     out: list[str] = []
     for row in body:
         lead = row[0] or "—"
-        if len(row) == 2:
+        rest = [f"{head[i]}：{row[i]}" if head[i] else row[i]
+                for i in range(1, len(row)) if row[i]]
+        if not rest:
+            out.append(f"- **{lead}**")
+        elif len(rest) == 1 and not head[1]:
+            out.append(f"- **{lead}** — {rest[0]}")
+        elif len(rest) == 1:
             out.append(f"- **{lead}** — {row[1]}")
-            continue
-        out.append(f"- **{lead}**")
-        for i in range(1, len(row)):
-            if row[i]:
-                label = head[i] or f"欄 {i + 1}"
-                out.append(f"    - {label}：{row[i]}")
+        else:
+            out.append(f"- **{lead}** — " + "；".join(rest))
     return out
 
 

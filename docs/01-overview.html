@@ -136,21 +136,12 @@ alt="一個人的 DevSecOps 整體架構" /></p>
 <h2 id="2-為什麼是這三個來源">2. 為什麼是這三個來源</h2>
 <p>這是整個系列最重要的一節。如果只讀一段，讀這段。</p>
 <ul>
-<li><strong>Falco</strong>
-<ul>
-<li>看得到：行程、檔案存取、syscall、容器內開 shell</li>
-<li>看不到：網路上發生什麼事</li>
-</ul></li>
-<li><strong>K8s Audit</strong>
-<ul>
-<li>看得到：誰呼叫了 API、RBAC 變更、Pod 規格</li>
-<li>看不到：容器裡實際做了什麼</li>
-</ul></li>
-<li><strong>Suricata</strong>
-<ul>
-<li>看得到：封包內容、C2 回連、掃描、L7 細節</li>
-<li>看不到：主機上的行為</li>
-</ul></li>
+<li><strong>Falco</strong> — 看得到：行程、檔案存取、syscall、容器內開
+shell；看不到：網路上發生什麼事</li>
+<li><strong>K8s Audit</strong> — 看得到：誰呼叫了 API、RBAC 變更、Pod
+規格；看不到：容器裡實際做了什麼</li>
+<li><strong>Suricata</strong> — 看得到：封包內容、C2 回連、掃描、L7
+細節；看不到：主機上的行為</li>
 </ul>
 <p>三者的盲點彼此互補，這不是巧合，是<strong>分層的必然</strong>：一次入侵會在不同的層
 留下不同的痕跡，只看一層就只能看到故事的一段。</p>
@@ -194,26 +185,12 @@ CPU / 5.2 GiB）。結果 Pod 一直 <code>Pending</code>。</p>
 <code>Insufficient cpu</code>。</p>
 <p>所以本系列所有元件都刻意縮編過：</p>
 <ul>
-<li><strong>Wazuh indexer</strong>
-<ul>
-<li>chart 預設：3 副本</li>
-<li>本系列：1 副本</li>
-</ul></li>
-<li><strong>Wazuh worker</strong>
-<ul>
-<li>chart 預設：2 副本</li>
-<li>本系列：1 副本</li>
-</ul></li>
-<li><strong>JVM heap</strong>
-<ul>
-<li>chart 預設：預設</li>
-<li>本系列：768m</li>
-</ul></li>
-<li><strong>PVC</strong>
-<ul>
-<li>chart 預設：50Gi</li>
-<li>本系列：10Gi</li>
-</ul></li>
+<li><strong>Wazuh indexer</strong> — chart 預設：3 副本；本系列：1
+副本</li>
+<li><strong>Wazuh worker</strong> — chart 預設：2 副本；本系列：1
+副本</li>
+<li><strong>JVM heap</strong> — chart 預設：預設；本系列：768m</li>
+<li><strong>PVC</strong> — chart 預設：50Gi；本系列：10Gi</li>
 </ul>
 <p>縮編後整套約 1150m CPU / 2.6 GiB，留得下空間給被監控的工作負載。</p>
 <h2 id="4-建立叢集">4. 建立叢集</h2>

@@ -297,31 +297,19 @@ class="sourceCode yaml"><code><span id="cb11-1"><a href="#cb11-1" aria-hidden="t
 它們全部都是<strong>寫死字串</strong>，沒有一個會因為名字
 不存在而報錯：</p>
 <ul>
-<li><strong>Falco 規則 macro</strong>
-<ul>
-<li>長什麼樣：<code>ka.target.namespace in (...)</code></li>
-<li>寫錯的症狀：規則不觸發</li>
-</ul></li>
-<li><strong>CCNP 的選擇器</strong>
-<ul>
-<li>長什麼樣：<code>k8s:io.kubernetes.pod.namespace: kube-security</code></li>
-<li>寫錯的症狀：流量被 default deny 擋掉，<code>i/o timeout</code></li>
-</ul></li>
-<li><strong>Alloy 的 syslog 目的地</strong>
-<ul>
-<li>長什麼樣：<code>wazuh-manager-worker.kube-security.svc.cluster.local</code></li>
-<li>寫錯的症狀：連不上，但 exporter 會一直重試</li>
-</ul></li>
-<li><strong>Grafana 資料來源 URL</strong>
-<ul>
-<li>長什麼樣：<code>https://wazuh-indexer.kube-security.svc.cluster.local:9200</code></li>
-<li>寫錯的症狀：datasource 測試失敗</li>
-</ul></li>
-<li><strong>稽核政策的 namespace 條件</strong>
-<ul>
-<li>長什麼樣：<code>namespaces: ["kube-security"]</code></li>
-<li>寫錯的症狀：事件不被記錄</li>
-</ul></li>
+<li><strong>Falco 規則 macro</strong> —
+長什麼樣：<code>ka.target.namespace in (...)</code>；寫錯的症狀：規則不觸發</li>
+<li><strong>CCNP 的選擇器</strong> —
+長什麼樣：<code>k8s:io.kubernetes.pod.namespace: kube-security</code>；寫錯的症狀：流量被
+default deny 擋掉，<code>i/o timeout</code></li>
+<li><strong>Alloy 的 syslog 目的地</strong> —
+長什麼樣：<code>wazuh-manager-worker.kube-security.svc.cluster.local</code>；寫錯的症狀：連不上，但
+exporter 會一直重試</li>
+<li><strong>Grafana 資料來源 URL</strong> —
+長什麼樣：<code>https://wazuh-indexer.kube-security.svc.cluster.local:9200</code>；寫錯的症狀：datasource
+測試失敗</li>
+<li><strong>稽核政策的 namespace 條件</strong> —
+長什麼樣：<code>namespaces: ["kube-security"]</code>；寫錯的症狀：事件不被記錄</li>
 </ul>
 <p>實務上最省事的做法是<strong>先把命名空間決定下來，再開始部署</strong>，並且用一次
 全域搜尋確認沒有漏網的：</p>

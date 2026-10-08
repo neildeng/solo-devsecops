@@ -118,34 +118,19 @@
 <h2 id="1-operator-的五個-crd">1. operator 的五個 CRD</h2>
 <p>falco-operator 把一支 Falco 拆成五種資源，每一種各自獨立更新：</p>
 <ul>
-<li><strong><code>Falco</code></strong>
-<ul>
-<li>負責：DaemonSet 本體</li>
-<li>本系列用它做什麼：調整 Pod 規格、探針</li>
-</ul></li>
-<li><strong><code>Config</code></strong>
-<ul>
-<li>負責：<code>falco.yaml</code> 的內容</li>
-<li>本系列用它做什麼：輸出目的地、engine 參數、<code>priority</code>
+<li><strong><code>Falco</code></strong> — 負責：DaemonSet
+本體；本系列用它做什麼：調整 Pod 規格、探針</li>
+<li><strong><code>Config</code></strong> — 負責：<code>falco.yaml</code>
+的內容；本系列用它做什麼：輸出目的地、engine 參數、<code>priority</code>
 門檻</li>
-</ul></li>
-<li><strong><code>Plugin</code></strong>
-<ul>
-<li>負責：事件來源與欄位擴充</li>
-<li>本系列用它做什麼：<code>k8saudit</code> / <code>json</code> /
-<code>container</code> / <code>k8smeta</code></li>
-</ul></li>
-<li><strong><code>Rulesfile</code></strong>
-<ul>
-<li>負責：規則檔</li>
-<li>本系列用它做什麼：內建規則集 +
+<li><strong><code>Plugin</code></strong> —
+負責：事件來源與欄位擴充；本系列用它做什麼：<code>k8saudit</code> /
+<code>json</code> / <code>container</code> / <code>k8smeta</code></li>
+<li><strong><code>Rulesfile</code></strong> —
+負責：規則檔；本系列用它做什麼：內建規則集 +
 自訂規則，<strong>並宣告載入順序</strong></li>
-</ul></li>
-<li><strong><code>Component</code></strong>
-<ul>
-<li>負責：附屬元件</li>
-<li>本系列用它做什麼：metacollector</li>
-</ul></li>
+<li><strong><code>Component</code></strong> —
+負責：附屬元件；本系列用它做什麼：metacollector</li>
 </ul>
 <p>這個拆法對偵測工程特別有用的地方在最後一欄：<strong>規則的載入順序可以用欄位
 明確宣告，而不是靠檔名或目錄慣例。</strong> 第 4 節會看到，Falco
