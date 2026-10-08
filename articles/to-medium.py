@@ -160,9 +160,12 @@ def convert(path: pathlib.Path, limit: int, out: pathlib.Path) -> None:
 
     # 檔名不以底線開頭：GitHub Pages 的 Jekyll 會略過 _ 開頭的檔案
     (out / "style.css").write_text(CSS)
+    # 只給 pagetitle 而不給 title：pandoc 的 title 會另外產生一個 <header><h1>，
+    # 與文章自己的 H1 重複，而 Medium 的 import 會拿第一個當標題（變成檔名）
+    title = next((l[2:].strip() for l in md.split("\n") if l.startswith("# ")), path.stem)
     subprocess.run(
         ["pandoc", "--from", "gfm", "--to", "html5", "--standalone",
-         "--metadata", f"title={path.stem}", "--css", "style.css", "-o", str(dst)],
+         "-V", f"pagetitle={title}", "--css", "style.css", "-o", str(dst)],
         input=md, text=True, check=True,
     )
     note = f"  · {len(wide)} 個寬表格改用清單（最寬 {max(wide)} 欄）" if wide else ""
