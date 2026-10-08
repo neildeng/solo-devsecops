@@ -170,8 +170,13 @@ def convert(path: pathlib.Path, limit: int, out: pathlib.Path, tables: str) -> N
     # 與文章自己的 H1 重複，而 Medium 的 import 會拿第一個當標題（變成檔名）
     title = next((l[2:].strip() for l in md.split("\n") if l.startswith("# ")), path.stem)
     subprocess.run(
+        # --syntax-highlighting=none 不能省：pandoc 的語法高亮會把程式碼包進
+        # <div class="sourceCode">，Medium 把那個 div 渲染成一個空方塊，
+        # 而且它替每一行塞的錨點 <a href="#cb5-1"> 也是多餘的。
+        # Medium 自己會做語法高亮，不需要 pandoc 先做一次。
         ["pandoc", "--from", "gfm", "--to", "html5", "--standalone",
-         "-V", f"pagetitle={title}", "--css", "style.css", "-o", str(dst)],
+         "--syntax-highlighting=none", "-V", f"pagetitle={title}",
+         "--css", "style.css", "-o", str(dst)],
         input=md, text=True, check=True,
     )
     # 拿掉 class：Medium 會據此自動偵測語言，實測把 shell 猜成 Perl
