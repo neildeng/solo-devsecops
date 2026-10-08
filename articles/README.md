@@ -17,6 +17,31 @@
 | 7 | [07-wazuh-brain.md](07-wazuh-brain.md) | 一個人的 DevSecOps (7)：從事件到告警 | Wazuh 規則層、爆發收斂 |
 | 8 | [08-alerting-and-fatigue.md](08-alerting-and-fatigue.md) | 一個人的 DevSecOps (8)：最後一哩與告警疲勞 | Grafana alerting、噪音治理、系列總結 |
 
+## 貼到 Medium
+
+**Medium 的編輯器不解析 Markdown** —— 直接貼 `.md` 會看到滿畫面的 `#` 與
+`**`。它讀的是剪貼簿裡的 rich text，所以要先轉成 HTML：
+
+```shell
+./articles/to-medium.py              # 全部八篇
+./articles/to-medium.py 06-suricata.md
+```
+
+產出在 `build/medium/*.html`（不進版控）。用瀏覽器開啟 → 全選 → 複製 →
+貼進 Medium 的空白草稿。第一個大標題會成為文章標題。
+
+轉檔時處理了四件 Medium 做不到的事：
+
+| 問題 | 處理方式 |
+|---|---|
+| **不支援表格** | 窄的轉成等寬對齊的程式碼區塊（CJK 算兩欄寬）；超過 76 欄的改用巢狀清單 —— Medium 的程式碼區塊不換行，寬表格會被截掉 |
+| 相對路徑的圖片 | 改寫成 `raw.githubusercontent.com` 的絕對網址，貼上時 Medium 會自己抓回去 |
+| 指向別篇的相對連結 | 改寫成 GitHub 網址（之後由 `series.yaml` 換成 Medium 連結） |
+| 只有兩種標題大小 | H4 以下會被當內文，所以文章只用到 `##` 與 `###` |
+
+貼完之後值得檢查的三處：**程式碼區塊有沒有被拆成好幾塊**、**圖片有沒有
+真的上傳**（而不是只剩一行網址）、**清單的縮排層級對不對**。
+
 ## 發佈前要補的事
 
 **一、畫面輸出的來源。** 文章裡的「畫面會輸出：」分成兩種，發佈前請自行確認：
