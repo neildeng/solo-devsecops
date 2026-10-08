@@ -123,7 +123,7 @@ manifest）</li>
 <p><strong>API Server 端</strong>（kind 的
 <code>kubeadmConfigPatches</code>）：</p>
 <div class="sourceCode" id="cb2"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">kubeadmConfigPatches</span><span class="kw">:</span></span>
+class="sourceCode yaml"><code><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">kubeadmConfigPatches</span><span class="kw">:</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="ch">|</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> ClusterConfiguration</span></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">apiServer</span><span class="kw">:</span></span>
@@ -133,7 +133,7 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="
 <span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">audit-webhook-batch-max-wait</span><span class="kw">:</span><span class="at"> 5s</span></span></code></pre></div>
 <p><strong>Falco 端</strong>（<code>Plugin</code> CR）：</p>
 <div class="sourceCode" id="cb3"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> artifact.falcosecurity.dev/v1alpha1</span></span>
+class="sourceCode yaml"><code><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> artifact.falcosecurity.dev/v1alpha1</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Plugin</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> k8saudit</span></span>
@@ -146,7 +146,7 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="
 的 <code>Falco</code> CR 沒有 service 欄位</strong>，這支 Service
 要自己維護：</p>
 <div class="sourceCode" id="cb4"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
+class="sourceCode yaml"><code><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> v1</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Service</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> falco-k8saudit-webhook</span></span>
@@ -163,7 +163,7 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="
 <span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nodePort</span><span class="kw">:</span><span class="at"> </span><span class="dv">30007</span></span></code></pre></div>
 <p>還有一條 CCNP —— 這是第 2 篇說過的「來源是節點不是 Pod」的案例：</p>
 <div class="sourceCode" id="cb5"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ingress</span><span class="kw">:</span></span>
+class="sourceCode yaml"><code><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ingress</span><span class="kw">:</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">fromEntities</span><span class="kw">:</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">host</span></span>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">remote-node</span></span>
@@ -188,7 +188,7 @@ level</strong>，而且 ——</p>
 的刪除等等，所以 對應的規則註定不會觸發。</p>
 <p>補上之後的政策長這樣（節錄）：</p>
 <div class="sourceCode" id="cb6"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> audit.k8s.io/v1</span></span>
+class="sourceCode yaml"><code><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> audit.k8s.io/v1</span></span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Policy</span></span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># ---- 排除：高頻且無安全價值的端點 ----</span></span>
@@ -222,7 +222,7 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb6-1"><a href="
 <p>第二個坑藏在 <code>level</code> 這個欄位裡。</p>
 <p>Falco 的規則會比對請求的<strong>內容</strong>，例如：</p>
 <div class="sourceCode" id="cb7"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">rule</span><span class="kw">:</span><span class="at"> KOAD S06 Create Privileged Pod</span></span>
+class="sourceCode yaml"><code><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">rule</span><span class="kw">:</span><span class="at"> KOAD S06 Create Privileged Pod</span></span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> </span><span class="ch">&gt;</span></span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">    kevt and koad_audit_create and ka.target.resource = pods and</span></span>
 <span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">    ka.req.pod.containers.privileged intersects (true)</span></span></code></pre></div>
@@ -235,7 +235,7 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="
 <p>所以凡是會用到 <code>ka.req.*</code> 的規則，對應的資源都要設成
 <code>RequestResponse</code>：</p>
 <div class="sourceCode" id="cb8"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">level</span><span class="kw">:</span><span class="at"> RequestResponse      # ← 不是 Metadata</span></span>
+class="sourceCode yaml"><code><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">level</span><span class="kw">:</span><span class="at"> RequestResponse      # ← 不是 Metadata</span></span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">resources</span><span class="kw">:</span></span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">group</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;&quot;</span></span>
 <span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">resources</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;pods&quot;</span><span class="kw">]</span></span>
@@ -263,7 +263,7 @@ level。</p>
 <p>解法就是第 4 篇的 <code>Rulesfile.priority</code>
 排序，加上檔尾的覆寫：</p>
 <div class="sourceCode" id="cb9"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># rules-k8saudit.yaml 的最後</span></span>
+class="sourceCode yaml"><code><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># rules-k8saudit.yaml 的最後</span></span>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">rule</span><span class="kw">:</span><span class="at"> Create Privileged Pod</span></span>
 <span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div>
 <h2 id="6-根因四規則裡的命名空間清單要跟著你的部署走">6.
@@ -271,7 +271,7 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb9-1"><a href="
 <p>有一類規則的條件是「有人動了安全元件所在的命名空間」。它靠一個 macro
 列舉那些命名空間：</p>
 <div class="sourceCode" id="cb10"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_security_namespaces</span></span>
+class="sourceCode yaml"><code><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_security_namespaces</span></span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> ka.target.namespace in (falco, kube-system, security)</span></span></code></pre></div>
 <p>上游範例預設把 Falco 裝在 <code>falco</code>、其他安全元件放在
 <code>security</code>。 <strong>本系列不是這樣部署的</strong> —— 第 4
@@ -281,7 +281,7 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb10-1"><a href=
 比對的是三個在本叢集<strong>不存在</strong>的名字，規則永遠不會觸發。</p>
 <p>改成實際的部署位置：</p>
 <div class="sourceCode" id="cb11"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_security_namespaces</span></span>
+class="sourceCode yaml"><code><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_security_namespaces</span></span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> ka.target.namespace in (kube-security, observability, kyverno)</span></span></code></pre></div>
 <h3 id="失敗的方向是危險的那一邊">失敗的方向是危險的那一邊</h3>
 <p>這個坑沒什麼技術含量，但它的失敗方向值得警覺：</p>
@@ -325,7 +325,7 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href=
 </ul>
 <p>實務上最省事的做法是<strong>先把命名空間決定下來，再開始部署</strong>，並且用一次
 全域搜尋確認沒有漏網的：</p>
-<pre class="shell"><code># 列出所有寫死命名空間的地方，確認每一個都是你要的
+<pre><code># 列出所有寫死命名空間的地方，確認每一個都是你要的
 rg -n &#39;kube-security|observability&#39; manifests/ values/ charts/ kind/</code></pre>
 <p>如果已經部署到一半才要改，至少把上表走一遍。<strong>CCNP
 那一列會最先讓你發現 問題</strong>（連線直接斷），Falco 規則那一列最晚
@@ -333,7 +333,7 @@ rg -n &#39;kube-security|observability&#39; manifests/ values/ charts/ kind/</co
 <h3 id="順帶一提這個-macro-的語意">順帶一提：這個 macro 的語意</h3>
 <p>值得花十秒鐘想清楚它在規則裡扮演什麼角色：</p>
 <div class="sourceCode" id="cb13"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">rule</span><span class="kw">:</span><span class="at"> KOAD S23 Security Tooling Modified</span></span>
+class="sourceCode yaml"><code><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">rule</span><span class="kw">:</span><span class="at"> KOAD S23 Security Tooling Modified</span></span>
 <span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> </span><span class="ch">&gt;</span></span>
 <span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="at">    kevt and koad_audit_delete and</span></span>
 <span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="at">    koad_security_namespaces and</span></span>
@@ -349,7 +349,7 @@ Kyverno），<strong>記得回來更新這份清單</strong>，否則
 篇會細談），但它屬於同一個家族，放在這裡講。</p>
 <p>為了分類 audit 事件，我在 Wazuh 加了一條 level 0 的規則：</p>
 <div class="sourceCode" id="cb14"><pre
-class="sourceCode xml"><code class="sourceCode xml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100120&quot;</span> <span class="ot">level=</span><span class="st">&quot;0&quot;</span>&gt;</span>
+class="sourceCode xml"><code><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100120&quot;</span> <span class="ot">level=</span><span class="st">&quot;0&quot;</span>&gt;</span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_sid</span>&gt;100100&lt;/<span class="kw">if_sid</span>&gt;</span>
 <span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">field</span> <span class="ot">name=</span><span class="st">&quot;source&quot;</span>&gt;^k8s_audit$&lt;/<span class="kw">field</span>&gt;</span>
 <span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Falco k8s_audit: 事件已解碼&lt;/<span class="kw">description</span>&gt;</span>
@@ -362,16 +362,29 @@ class="sourceCode xml"><code class="sourceCode xml"><span id="cb14-1"><a href="#
 告警總數照常成長，你不會覺得有問題。</p>
 <p>解法是在它下面補一條 Critical 的規則：</p>
 <div class="sourceCode" id="cb15"><pre
-class="sourceCode xml"><code class="sourceCode xml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100125&quot;</span> <span class="ot">level=</span><span class="st">&quot;12&quot;</span>&gt;</span>
+class="sourceCode xml"><code><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">rule</span> <span class="ot">id=</span><span class="st">&quot;100125&quot;</span> <span class="ot">level=</span><span class="st">&quot;12&quot;</span>&gt;</span>
 <span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">if_sid</span>&gt;100120&lt;/<span class="kw">if_sid</span>&gt;</span>
 <span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">field</span> <span class="ot">name=</span><span class="st">&quot;priority&quot;</span>&gt;^Critical$&lt;/<span class="kw">field</span>&gt;</span>
 <span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>  &lt;<span class="kw">description</span>&gt;Falco k8s_audit Critical: $(rule)&lt;/<span class="kw">description</span>&gt;</span>
 <span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">rule</span>&gt;</span></code></pre></div>
 <h2 id="8-驗證用真的操作觸發">8. 驗證：用真的操作觸發</h2>
 <p>稽核規則的驗證沒有捷徑，就是真的做一次那個動作。</p>
-<pre class="shell"><code># S06：建立特權 Pod
-kubectl run priv-probe --image=busybox:1.36 --restart=Never -n default \
-  --overrides=&#39;{&quot;spec&quot;:{&quot;containers&quot;:[{&quot;name&quot;:&quot;p&quot;,&quot;image&quot;:&quot;busybox:1.36&quot;,&quot;securityContext&quot;:{&quot;privileged&quot;:true},&quot;command&quot;:[&quot;sh&quot;,&quot;-c&quot;,&quot;sleep 3&quot;]}]}}&#39;
+<pre><code># S06：建立特權 Pod
+kubectl apply -f - &lt;&lt;&#39;EOF&#39;
+apiVersion: v1
+kind: Pod
+metadata:
+  name: priv-probe
+  namespace: default
+spec:
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: busybox:1.36
+      securityContext:
+        privileged: true
+      command: [&quot;sh&quot;, &quot;-c&quot;, &quot;sleep 3&quot;]
+EOF
 
 # S09：建立 ClusterRoleBinding
 kubectl create clusterrolebinding probe-crb \
@@ -381,16 +394,16 @@ kubectl create clusterrolebinding probe-crb \
 kubectl delete pod priv-probe -n default
 kubectl delete clusterrolebinding probe-crb</code></pre>
 <p>然後看輸出：</p>
-<pre class="shell"><code>kubectl -n kube-security logs ds/falco -c falco --tail=50 | grep -i koad</code></pre>
+<pre><code>kubectl -n kube-security logs ds/falco -c falco --tail=50 | grep -i koad</code></pre>
 <p>先確認 webhook 本身是通的（四個節點都該在 endpoints 裡）：</p>
-<pre class="shell"><code>kubectl -n kube-security get endpoints falco-k8saudit-webhook</code></pre>
+<pre><code>kubectl -n kube-security get endpoints falco-k8saudit-webhook</code></pre>
 <h2 id="9-剩下的-10-條以及為什麼那不是-bug">9. 剩下的 10
 條，以及為什麼那不是 bug</h2>
 <p>追查結束時的狀態：可觸發的規則從 0 條變成 3 條實測（S06、S09、S23）
 加 2 條待演練。<strong>剩下 10 條卡在排除條件。</strong></p>
 <p>那些規則都有這樣的 macro：</p>
 <div class="sourceCode" id="cb19"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_not_system_user</span></span>
+class="sourceCode yaml"><code><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_not_system_user</span></span>
 <span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> </span><span class="ch">&gt;</span></span>
 <span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="at">    not ka.user.name startswith &quot;system:&quot; and</span></span>
 <span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="at">    not ka.user.name in (kubernetes-admin)</span></span></code></pre></div>

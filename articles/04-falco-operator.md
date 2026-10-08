@@ -348,8 +348,21 @@ kubectl -n kube-security exec ds/falco -c falco -- \
 最後做一次真實觸發 —— 建立一個特權 Pod：
 
 ```shell
-kubectl run privileged-probe --image=busybox:1.36 --restart=Never -n default \
-  --overrides='{"spec":{"containers":[{"name":"p","image":"busybox:1.36","securityContext":{"privileged":true},"command":["sh","-c","sleep 5"]}]}}'
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privileged-probe
+  namespace: default
+spec:
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: busybox:1.36
+      securityContext:
+        privileged: true
+      command: ["sh", "-c", "sleep 5"]
+EOF
 ```
 
 然後看 Falco 的輸出：

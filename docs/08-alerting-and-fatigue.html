@@ -167,7 +167,7 @@ Elasticsearch 7，Grafana 內建的 Elasticsearch 資料來源可以直接連。
 靜默失敗點一：<code>valuesFrom</code> 的層級</h2>
 <p>資料來源要用 secret 裡的帳密。grafana-operator 的寫法是：</p>
 <div class="sourceCode" id="cb2"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+class="sourceCode yaml"><code><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">datasource</span><span class="kw">:</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> Wazuh</span></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">uid</span><span class="kw">:</span><span class="at"> wazuh-alerts</span></span>
@@ -194,10 +194,13 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="
 <span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">name</span><span class="kw">:</span><span class="at"> wazuh-indexer-cred</span></span>
 <span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">key</span><span class="kw">:</span><span class="at"> INDEXER_PASSWORD</span></span></code></pre></div>
 <p>兩個層級不同，很容易寫混：</p>
-<pre class="text"><code>欄位        位置
-───────────────────────────────────────────────────────────────────────
-valuesFrom  spec 層級（放進 spec.datasource 會被 strict decoding 擋下）
-targetPath  相對於 spec.datasource，所以不加 datasource. 前綴</code></pre>
+<ul>
+<li><strong><code>valuesFrom</code></strong> — <code>spec</code>
+層級（放進 <code>spec.datasource</code> 會被 strict decoding 擋下）</li>
+<li><strong><code>targetPath</code></strong> — <strong>相對於
+<code>spec.datasource</code></strong>，所以不加 <code>datasource.</code>
+前綴</li>
+</ul>
 <p>寫成 <code>spec.datasource.valuesFrom</code> 還好，至少會報錯。 但
 <code>targetPath</code>
 多寫一層前綴<strong>完全不報錯</strong>，只會得到空的
@@ -205,35 +208,35 @@ targetPath  相對於 spec.datasource，所以不加 datasource. 前綴</code></
 <h2 id="4-靜默失敗點二bucketaggs-不能留空">4.
 靜默失敗點二：<code>bucketAggs</code> 不能留空</h2>
 <p>告警規則長這樣：</p>
-<div class="sourceCode" id="cb4"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> grafana.integreatly.org/v1beta1</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> GrafanaAlertRuleGroup</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> wazuh-high-severity</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">folderRef</span><span class="kw">:</span><span class="at"> devsecops</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">interval</span><span class="kw">:</span><span class="at"> 1m</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">rules</span><span class="kw">:</span></span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">title</span><span class="kw">:</span><span class="at"> Wazuh 高嚴重度告警</span></span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> C</span></span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">data</span><span class="kw">:</span></span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">refId</span><span class="kw">:</span><span class="at"> A</span></span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">datasourceUid</span><span class="kw">:</span><span class="at"> wazuh-alerts</span></span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">model</span><span class="kw">:</span></span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">query</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;rule.level:&gt;=13&quot;</span></span>
-<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">metrics</span><span class="kw">:</span><span class="at"> </span><span class="kw">[{</span><span class="at"> </span><span class="fu">id</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;1&quot;</span><span class="kw">,</span><span class="at"> </span><span class="fu">type</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;count&quot;</span><span class="at"> </span><span class="kw">}]</span></span>
-<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">bucketAggs</span><span class="kw">:</span></span>
-<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a><span class="at">              </span><span class="kw">- </span><span class="fu">id</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;2&quot;</span></span>
-<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="at">                </span><span class="fu">type</span><span class="kw">:</span><span class="at"> date_histogram</span></span>
-<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a><span class="at">                </span><span class="fu">field</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;@timestamp&quot;</span></span>
-<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a><span class="at">                </span><span class="fu">settings</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> </span><span class="fu">interval</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;5m&quot;</span><span class="at"> </span><span class="kw">}</span></span>
-<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">timeField</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;@timestamp&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode yaml"><code><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> grafana.integreatly.org/v1beta1</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> GrafanaAlertRuleGroup</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> wazuh-high-severity</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">folderRef</span><span class="kw">:</span><span class="at"> devsecops</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">interval</span><span class="kw">:</span><span class="at"> 1m</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">rules</span><span class="kw">:</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">title</span><span class="kw">:</span><span class="at"> Wazuh 高嚴重度告警</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> C</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">data</span><span class="kw">:</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">refId</span><span class="kw">:</span><span class="at"> A</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">datasourceUid</span><span class="kw">:</span><span class="at"> wazuh-alerts</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">model</span><span class="kw">:</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">query</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;rule.level:&gt;=13&quot;</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">metrics</span><span class="kw">:</span><span class="at"> </span><span class="kw">[{</span><span class="at"> </span><span class="fu">id</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;1&quot;</span><span class="kw">,</span><span class="at"> </span><span class="fu">type</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;count&quot;</span><span class="at"> </span><span class="kw">}]</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">bucketAggs</span><span class="kw">:</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="at">              </span><span class="kw">- </span><span class="fu">id</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;2&quot;</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="at">                </span><span class="fu">type</span><span class="kw">:</span><span class="at"> date_histogram</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a><span class="at">                </span><span class="fu">field</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;@timestamp&quot;</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a><span class="at">                </span><span class="fu">settings</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> </span><span class="fu">interval</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;5m&quot;</span><span class="at"> </span><span class="kw">}</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">timeField</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;@timestamp&quot;</span></span></code></pre></div>
 <p><code>bucketAggs</code> 留空會得到：</p>
 <pre><code>invalid query, missing metrics and aggregations</code></pre>
 <p>但這個錯誤<strong>只出現在規則的 <code>health</code>
 欄位</strong>，CR 的 <code>status</code> 仍然是
 <code>ApplySuccessful</code>。看 CR 狀態會以為一切正常。</p>
-<pre class="shell"><code># 看 CR status：ApplySuccessful，沒問題
+<pre><code># 看 CR status：ApplySuccessful，沒問題
 kubectl get grafanaalertrulegroup wazuh-high-severity -n observability -o jsonpath=&#39;{.status}&#39;
 
 # 看規則的 health：這裡才看得到錯
@@ -244,22 +247,22 @@ curl -s -u &quot;admin:$GF_PASS&quot; http://127.0.0.1:13000/api/v1/provisioning
 <p>這是整條鏈<strong>最容易漏</strong>的一環。</p>
 <p>沒有 <code>GrafanaNotificationPolicy</code> 的話：告警照常評估、照常
 <code>state=firing</code>、面板上一片紅，<strong>但不會送到任何地方</strong>。收件匣是空的。</p>
-<div class="sourceCode" id="cb7"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> grafana.integreatly.org/v1beta1</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> GrafanaNotificationPolicy</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> default</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> observability</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">instanceSelector</span><span class="kw">:</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">dashboards</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;grafana&quot;</span></span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">route</span><span class="kw">:</span></span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">receiver</span><span class="kw">:</span><span class="at"> DEFAULT</span></span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">group_by</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;alertname&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;grafana_folder&quot;</span><span class="kw">]</span></span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">group_wait</span><span class="kw">:</span><span class="at"> 30s</span></span>
-<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">group_interval</span><span class="kw">:</span><span class="at"> 5m</span></span>
-<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">repeat_interval</span><span class="kw">:</span><span class="at"> 4h</span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode yaml"><code><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> grafana.integreatly.org/v1beta1</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> GrafanaNotificationPolicy</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> default</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> observability</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">instanceSelector</span><span class="kw">:</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">dashboards</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;grafana&quot;</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">route</span><span class="kw">:</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">receiver</span><span class="kw">:</span><span class="at"> DEFAULT</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">group_by</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;alertname&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;grafana_folder&quot;</span><span class="kw">]</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">group_wait</span><span class="kw">:</span><span class="at"> 30s</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">group_interval</span><span class="kw">:</span><span class="at"> 5m</span></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">repeat_interval</span><span class="kw">:</span><span class="at"> 4h</span></span></code></pre></div>
 <h2 id="6-靜默失敗點四這個-cr-的欄位是-snake_case">6. 靜默失敗點四：這個
 CR 的欄位是 snake_case</h2>
 <p><code>group_by</code> / <code>group_wait</code> /
@@ -273,9 +276,22 @@ CR 的欄位是 snake_case</h2>
 </blockquote>
 <p>驗證只能靠端到端。本系列的做法是製造一次真實爆發，一路看到 Mailpit
 收信：</p>
-<pre class="shell"><code># 1) 觸發：特權 Pod 製造爆發
-kubectl run burst-probe --image=busybox:1.36 --restart=Never -n default \
-  --overrides=&#39;{&quot;spec&quot;:{&quot;containers&quot;:[{&quot;name&quot;:&quot;p&quot;,&quot;image&quot;:&quot;busybox:1.36&quot;,&quot;securityContext&quot;:{&quot;privileged&quot;:true},&quot;command&quot;:[&quot;sh&quot;,&quot;-c&quot;,&quot;for i in $(seq 1 40); do ls /etc/shadow; done; sleep 3&quot;]}]}}&#39;
+<pre><code># 1) 觸發：特權 Pod 製造爆發
+kubectl apply -f - &lt;&lt;&#39;EOF&#39;
+apiVersion: v1
+kind: Pod
+metadata:
+  name: burst-probe
+  namespace: default
+spec:
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: busybox:1.36
+      securityContext:
+        privileged: true
+      command: [&quot;sh&quot;, &quot;-c&quot;, &quot;for i in $(seq 1 40); do ls /etc/shadow; done; sleep 3&quot;]
+EOF
 
 # 2) Wazuh 是否產生收斂後的告警
 kubectl exec -n kube-security wazuh-manager-worker-0 -c wazuh-manager -- \
@@ -292,15 +308,19 @@ curl -s http://127.0.0.1:8025/api/v1/messages | jq &#39;.messages[0] | {Subject,
 <h2 id="7-告警疲勞先治本再調門檻">7. 告警疲勞：先治本，再調門檻</h2>
 <p>這一節是本文的另一個主軸，而且它是我真的把聊天室洗版之後學到的。</p>
 <h3 id="先把吵變成一個有單位的數字">先把「吵」變成一個有單位的數字</h3>
-<pre class="shell"><code>kubectl -n kube-security logs ds/falco -c falco --since=3m \
+<pre><code>kubectl -n kube-security logs ds/falco -c falco --since=3m \
   | grep -c &#39;&quot;priority&quot;&#39;</code></pre>
 <p>量到的結果：<strong>每分鐘約 300 則</strong>。再拆組成：</p>
-<pre class="text"><code>來源                                                           佔比
-───────────────────────────────────────────────────────────────────
-健康探針（pg_isready / ping_liveness / rabbitmq-diagnostics）  87%
-runc 觸發的 Mount in Container                                 少量
-wazuh-agent 的例行指令（netstat / last / df）                  少量
-真實事件                                                       極少</code></pre>
+<ul>
+<li><strong>健康探針（<code>pg_isready</code> /
+<code>ping_liveness</code> /
+<code>rabbitmq-diagnostics</code>）</strong> — <strong>87%</strong></li>
+<li><strong><code>runc</code> 觸發的 Mount in Container</strong> —
+少量</li>
+<li><strong>wazuh-agent 的例行指令（<code>netstat</code> /
+<code>last</code> / <code>df</code>）</strong> — 少量</li>
+<li><strong>真實事件</strong> — 極少</li>
+</ul>
 <h3 id="兩層處理順序不能顛倒">兩層處理，順序不能顛倒</h3>
 <ul>
 <li><strong><strong>規則層（治本）</strong></strong>
@@ -323,15 +343,15 @@ Loki、Wazuh 與索引，
 <h3
 id="排除條件的寫法用指令內容不用-parent">排除條件的寫法：用指令內容，不用
 parent</h3>
-<div class="sourceCode" id="cb11"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_is_health_probe</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> </span><span class="ch">&gt;</span></span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;pg_isready&quot; or</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;ping_liveness&quot; or</span></span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;ping_readiness&quot; or</span></span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;rabbitmq-diagnostics&quot; or</span></span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;/health/&quot; or</span></span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;healthcheck.sh&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode yaml"><code><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">macro</span><span class="kw">:</span><span class="at"> koad_is_health_probe</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">condition</span><span class="kw">:</span><span class="at"> </span><span class="ch">&gt;</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;pg_isready&quot; or</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;ping_liveness&quot; or</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;ping_readiness&quot; or</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;rabbitmq-diagnostics&quot; or</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;/health/&quot; or</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="at">    proc.cmdline contains &quot;healthcheck.sh&quot;</span></span></code></pre></div>
 <p>exec 探針由 CRI 喚起，<code>proc.pname</code>
 多半是空的，不是可靠的判別依據。 而<strong>攻擊者開一個互動 shell
 不會長得像 <code>pg_isready</code></strong>，所以比對指令字串
@@ -420,22 +440,38 @@ mirror</li>
 之後才回頭清」的那一段。</p>
 <p><strong>二、靜態證據不能證明動態行為。</strong></p>
 <p>這條在系列裡出現了四次，每次換一個面貌：</p>
-<pre class="text"><code>看到的                   以為        實際
-─────────────────────────────────────────────────────────
-status: ApplySuccessful  儀表板會動  只證明寫進去了
-規則載入成功             規則會觸發  可能被遮蔽
-檔案 grep 得到新內容     規則生效了  analysisd 還抱著舊的
-中間節點都健康           鏈路是通的  最後一跳沒接</code></pre>
+<ul>
+<li><strong><code>status: ApplySuccessful</code></strong>
+<ul>
+<li>以為：儀表板會動</li>
+<li>實際：只證明寫進去了</li>
+</ul></li>
+<li><strong>規則載入成功</strong>
+<ul>
+<li>以為：規則會觸發</li>
+<li>實際：可能被遮蔽</li>
+</ul></li>
+<li><strong>檔案 grep 得到新內容</strong>
+<ul>
+<li>以為：規則生效了</li>
+<li>實際：analysisd 還抱著舊的</li>
+</ul></li>
+<li><strong>中間節點都健康</strong>
+<ul>
+<li>以為：鏈路是通的</li>
+<li>實際：最後一跳沒接</li>
+</ul></li>
+</ul>
 <blockquote>
 <p><strong>中間節點的健康狀態，不能加總成鏈路的健康狀態。</strong></p>
 </blockquote>
 <p><strong>三、量測工具自己會壞，而且不報錯。</strong></p>
 <p>系列過程中有八次判斷錯誤，全部來自「把量測工具的輸出當成事實」：</p>
-<pre class="text"><code>我看到的那一份                  不是
-──────────────────────────────────────────────
-單一副本 / 單一節點 / 單次取樣  全部
-快取的憑證                      現在
-磁碟上的設定檔                  執行中的那一份</code></pre>
+<ul>
+<li><strong>單一副本 / 單一節點 / 單次取樣</strong> — 全部</li>
+<li><strong>快取的憑證</strong> — 現在</li>
+<li><strong>磁碟上的設定檔</strong> — 執行中的那一份</li>
+</ul>
 <p>空間、時間、狀態——同一個錯誤的三個面向。</p>
 <p><strong>四、與其逐一驗證假設，不如先找出一個「成功的案例」。</strong></p>
 <p>17 條規則只有 1 條會觸發時，問題從「為什麼都不觸發」變成「它和其他 16

@@ -135,11 +135,23 @@ alt="一個人的 DevSecOps 整體架構" /></p>
 </ul>
 <h2 id="2-為什麼是這三個來源">2. 為什麼是這三個來源</h2>
 <p>這是整個系列最重要的一節。如果只讀一段，讀這段。</p>
-<pre class="text"><code>來源       看得到                                   看不到
-──────────────────────────────────────────────────────────────────────
-Falco      行程、檔案存取、syscall、容器內開 shell  網路上發生什麼事
-K8s Audit  誰呼叫了 API、RBAC 變更、Pod 規格        容器裡實際做了什麼
-Suricata   封包內容、C2 回連、掃描、L7 細節         主機上的行為</code></pre>
+<ul>
+<li><strong>Falco</strong>
+<ul>
+<li>看得到：行程、檔案存取、syscall、容器內開 shell</li>
+<li>看不到：網路上發生什麼事</li>
+</ul></li>
+<li><strong>K8s Audit</strong>
+<ul>
+<li>看得到：誰呼叫了 API、RBAC 變更、Pod 規格</li>
+<li>看不到：容器裡實際做了什麼</li>
+</ul></li>
+<li><strong>Suricata</strong>
+<ul>
+<li>看得到：封包內容、C2 回連、掃描、L7 細節</li>
+<li>看不到：主機上的行為</li>
+</ul></li>
+</ul>
 <p>三者的盲點彼此互補，這不是巧合，是<strong>分層的必然</strong>：一次入侵會在不同的層
 留下不同的痕跡，只看一層就只能看到故事的一段。</p>
 <p>舉個本系列後面會真的撞到的例子：某個服務的 Basic Auth 憑證在叢集內以
@@ -161,7 +173,7 @@ shell，Suricata 看到的 只是一條加密連線，Falco 卻會明確告訴�
 騙</h2>
 <p>這是我在第一天就踩到的坑，而且它騙得很徹底。</p>
 <p>部署之前想先確認資源夠不夠，於是看了一眼節點：</p>
-<pre class="shell"><code>kubectl get nodes -o custom-columns=NAME:.metadata.name,CPU:.status.capacity.cpu,MEM:.status.capacity.memory</code></pre>
+<pre><code>kubectl get nodes -o custom-columns=NAME:.metadata.name,CPU:.status.capacity.cpu,MEM:.status.capacity.memory</code></pre>
 <p>畫面會輸出：</p>
 <pre><code>NAME                    CPU   MEM
 the-one-control-plane   10    16116604Ki
@@ -171,7 +183,7 @@ the-one-worker3         10    16116604Ki</code></pre>
 <p>看起來有 40 CPU / 64 GiB，於是放心地用了某個 chart 的預設值 （3700m
 CPU / 5.2 GiB）。結果 Pod 一直 <code>Pending</code>。</p>
 <p>再看一眼 Docker：</p>
-<pre class="shell"><code>docker info --format &#39;{{.NCPU}} CPU / {{.MemTotal}} bytes&#39;</code></pre>
+<pre><code>docker info --format &#39;{{.NCPU}} CPU / {{.MemTotal}} bytes&#39;</code></pre>
 <p>畫面會輸出：</p>
 <pre><code>10 CPU / 16819609600 bytes</code></pre>
 <p><strong>kind 的四個節點是同一個 Docker VM
@@ -181,42 +193,58 @@ CPU / 5.2 GiB）。結果 Pod 一直 <code>Pending</code>。</p>
 成功排程、然後整台機器一起慢下來</strong>， 而不是乾脆的
 <code>Insufficient cpu</code>。</p>
 <p>所以本系列所有元件都刻意縮編過：</p>
-<pre class="text"><code>元件           chart 預設  本系列
-─────────────────────────────────
-Wazuh indexer  3 副本      1 副本
-Wazuh worker   2 副本      1 副本
-JVM heap       預設        768m
-PVC            50Gi        10Gi</code></pre>
+<ul>
+<li><strong>Wazuh indexer</strong>
+<ul>
+<li>chart 預設：3 副本</li>
+<li>本系列：1 副本</li>
+</ul></li>
+<li><strong>Wazuh worker</strong>
+<ul>
+<li>chart 預設：2 副本</li>
+<li>本系列：1 副本</li>
+</ul></li>
+<li><strong>JVM heap</strong>
+<ul>
+<li>chart 預設：預設</li>
+<li>本系列：768m</li>
+</ul></li>
+<li><strong>PVC</strong>
+<ul>
+<li>chart 預設：50Gi</li>
+<li>本系列：10Gi</li>
+</ul></li>
+</ul>
 <p>縮編後整套約 1150m CPU / 2.6 GiB，留得下空間給被監控的工作負載。</p>
 <h2 id="4-建立叢集">4. 建立叢集</h2>
 <p><code>kind</code>
 的設定檔有兩個與後面章節直接相關的地方，先放進去，免得之後重建：</p>
-<div class="sourceCode" id="cb7"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># kind/cluster.yaml</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Cluster</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> kind.x-k8s.io/v1alpha4</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="fu">name</span><span class="kw">:</span><span class="at"> the-one</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="fu">networking</span><span class="kw">:</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># 由 Cilium 接手，不要讓 kindnet 先上</span></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">disableDefaultCNI</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kubeProxyMode</span><span class="kw">:</span><span class="at"> none</span></span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="fu">nodes</span><span class="kw">:</span></span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> control-plane</span></span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">kubeadmConfigPatches</span><span class="kw">:</span></span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="ch">|</span></span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> ClusterConfiguration</span></span>
-<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">apiServer</span><span class="kw">:</span></span>
-<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">extraArgs</span><span class="kw">:</span></span>
-<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="co"># 稽核日誌。第 5 篇會用到，先開著</span></span>
-<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">audit-policy-file</span><span class="kw">:</span><span class="at"> /etc/kubernetes/policies/audit-policy.yaml</span></span>
-<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">audit-webhook-config-file</span><span class="kw">:</span><span class="at"> /etc/kubernetes/policies/audit-webhook.yaml</span></span>
-<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">extraMounts</span><span class="kw">:</span></span>
-<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">hostPath</span><span class="kw">:</span><span class="at"> ./kind/audit-policy.yaml</span></span>
-<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">containerPath</span><span class="kw">:</span><span class="at"> /etc/kubernetes/policies/audit-policy.yaml</span></span>
-<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">readOnly</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> worker</span></span>
-<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> worker</span></span>
-<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> worker</span></span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode yaml"><code><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># kind/cluster.yaml</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Cluster</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> kind.x-k8s.io/v1alpha4</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">name</span><span class="kw">:</span><span class="at"> the-one</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">networking</span><span class="kw">:</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># 由 Cilium 接手，不要讓 kindnet 先上</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">disableDefaultCNI</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kubeProxyMode</span><span class="kw">:</span><span class="at"> none</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="fu">nodes</span><span class="kw">:</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> control-plane</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">kubeadmConfigPatches</span><span class="kw">:</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="ch">|</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">kind</span><span class="kw">:</span><span class="at"> ClusterConfiguration</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">apiServer</span><span class="kw">:</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">extraArgs</span><span class="kw">:</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="co"># 稽核日誌。第 5 篇會用到，先開著</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">audit-policy-file</span><span class="kw">:</span><span class="at"> /etc/kubernetes/policies/audit-policy.yaml</span></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">audit-webhook-config-file</span><span class="kw">:</span><span class="at"> /etc/kubernetes/policies/audit-webhook.yaml</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">extraMounts</span><span class="kw">:</span></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="fu">hostPath</span><span class="kw">:</span><span class="at"> ./kind/audit-policy.yaml</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">containerPath</span><span class="kw">:</span><span class="at"> /etc/kubernetes/policies/audit-policy.yaml</span></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">readOnly</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> worker</span></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">- </span><span class="fu">role</span><span class="kw">:</span><span class="at"> worker</span></span></code></pre></div>
 <p>兩個選擇值得說明：</p>
 <p><strong><code>disableDefaultCNI: true</code>。</strong> 第 2
 篇整篇都在講 Cilium 的 <code>CiliumClusterwideNetworkPolicy</code>，那是
@@ -228,7 +256,7 @@ service 轉發，Hubble 才看得到 完整的連線脈絡。</p>
 <code>eth0</code>， Suricata 看不到。單節點叢集測 IDS
 規則會得到「規則沒問題但一筆都沒觸發」 的假象。</p>
 <p>建立：</p>
-<pre class="shell"><code>kind create cluster --config kind/cluster.yaml</code></pre>
+<pre><code>kind create cluster --config kind/cluster.yaml</code></pre>
 <h2 id="5-整個系列的部署順序">5. 整個系列的部署順序</h2>
 <p>順序不是隨便排的，有兩條相依鏈：</p>
 <pre><code>Cilium ──→ CCNP ──────────────────────┐

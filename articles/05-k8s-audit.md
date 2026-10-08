@@ -310,8 +310,21 @@ level 0 = 只分類，不告警。本意是避免每筆事件都變成噪音。
 
 ```shell
 # S06：建立特權 Pod
-kubectl run priv-probe --image=busybox:1.36 --restart=Never -n default \
-  --overrides='{"spec":{"containers":[{"name":"p","image":"busybox:1.36","securityContext":{"privileged":true},"command":["sh","-c","sleep 3"]}]}}'
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: priv-probe
+  namespace: default
+spec:
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: busybox:1.36
+      securityContext:
+        privileged: true
+      command: ["sh", "-c", "sleep 3"]
+EOF
 
 # S09：建立 ClusterRoleBinding
 kubectl create clusterrolebinding probe-crb \

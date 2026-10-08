@@ -128,7 +128,7 @@ MiB，放不下。</p>
 的狀態很有價值。</p>
 <p>所以用兩階段建置：</p>
 <div class="sourceCode" id="cb1"><pre
-class="sourceCode dockerfile"><code class="sourceCode dockerfile"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Stage 1：以與 DaemonSet 相同版本的 Suricata 產生規則並驗證</span></span>
+class="sourceCode dockerfile"><code><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Stage 1：以與 DaemonSet 相同版本的 Suricata 產生規則並驗證</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> jasonish/suricata:8.0.6 <span class="kw">AS</span> build</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> update.yaml enable.conf disable.conf modify.conf /etc/suricata/</span>
@@ -155,7 +155,7 @@ emptyDir，主容器唯讀掛載。</p>
 <p>所以另外寫一支腳本，<strong>用 chart
 實際渲染的設定再驗一次</strong>：</p>
 <div class="sourceCode" id="cb2"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">#!/usr/bin/env bash</span></span>
+class="sourceCode bash"><code><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">#!/usr/bin/env bash</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">set</span> <span class="at">-euo</span> pipefail</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="va">CHART_DIR</span><span class="op">=</span><span class="st">&quot;</span><span class="va">$(</span><span class="bu">cd</span> <span class="st">&quot;</span><span class="va">$(</span><span class="fu">dirname</span> <span class="st">&quot;</span><span class="va">$0</span><span class="st">&quot;</span><span class="va">)</span><span class="st">&quot;</span> <span class="kw">&amp;&amp;</span> <span class="bu">pwd</span><span class="va">)</span><span class="st">&quot;</span></span>
@@ -199,12 +199,12 @@ Validation passed.</code></pre>
 觸發」的假象，然後開始懷疑規則、懷疑設定、懷疑 AF_PACKET ——而真正的問題
 是封包從來沒經過 Suricata。</p>
 <p><strong>所以測試一定要跨節點：</strong></p>
-<pre class="shell"><code>kubectl run icmp-probe --image=busybox:1.36 --restart=Never -n default \
+<pre><code>kubectl run icmp-probe --image=busybox:1.36 --restart=Never -n default \
   --overrides=&#39;{&quot;spec&quot;:{&quot;nodeName&quot;:&quot;the-one-worker3&quot;}}&#39; \
   --command -- sh -c &#39;ping -c 5 192.168.247.9&#39;   # ← worker2 的 node IP</code></pre>
 <p>這也回頭解釋了第 1 篇為什麼堅持開三個 worker。</p>
 <h2 id="3-部署">3. 部署</h2>
-<pre class="shell"><code># tag 以建置日期為版本，需與 values.yaml 的 rules.image.tag 一致
+<pre><code># tag 以建置日期為版本，需與 values.yaml 的 rules.image.tag 一致
 RULES_TAG=2026.10.08.1
 docker build -t harbor.example.com/security/suricata-rules:$RULES_TAG \
   ./charts/suricata/suricata-rules
@@ -215,7 +215,7 @@ kind load docker-image -n the-one harbor.example.com/security/suricata-rules:$RU
 
 helm upgrade --install suricata -n kube-security ./charts/suricata</code></pre>
 <p>確認規則有載入：</p>
-<pre class="shell"><code>kubectl logs -n kube-security -l app.kubernetes.io/name=suricata -c suricata --tail=50 \
+<pre><code>kubectl logs -n kube-security -l app.kubernetes.io/name=suricata -c suricata --tail=50 \
   | grep &quot;rules successfully loaded&quot;</code></pre>
 <p>畫面會輸出：</p>
 <pre><code>Info: detect: 1 rule files processed. 53037 rules successfully loaded, 0 rules failed, 0 rules skipped
@@ -223,7 +223,7 @@ Notice: threads: Threads created -&gt; W: 10 FM: 1 FR: 1   Engine started.</code
 <p>到這裡它「會動」了。<strong>但先別接到告警鏈。</strong></p>
 <h2 id="4-先量再調">4. 先量，再調</h2>
 <p>裝完第一件事是量它產生了什麼，不是看它的告警。</p>
-<pre class="shell"><code>kubectl exec -n kube-security ds/suricata -c suricata -- sh -c &#39;
+<pre><code>kubectl exec -n kube-security ds/suricata -c suricata -- sh -c &#39;
   wc -lc /var/log/suricata/eve.json
   grep -o &quot;\&quot;event_type\&quot;:\&quot;[a-z_]*\&quot;&quot; /var/log/suricata/eve.json | sort | uniq -c | sort -rn
 &#39;</code></pre>
@@ -243,12 +243,14 @@ Notice: threads: Threads created -&gt; W: 10 FM: 1 FR: 1   Engine started.</code
      16 &quot;signature&quot;:&quot;SURICATA STREAM Packet with invalid ack&quot;
      ...</code></pre>
 <p>整理成一張表：</p>
-<pre class="text"><code>項目                       數字
-─────────────────────────────────────────────────────────────────
-eve.json                   21147 行 / 13.6 MB → 約 1.2 GB/天/node
-alert 佔比                 0.75%
-158 筆 alert 中的協定異常  111 筆（70%）
-ET Open 真實命中           0 筆</code></pre>
+<ul>
+<li><strong>eve.json</strong> — 21147 行 / 13.6 MB → <strong>約 1.2
+GB/天/node</strong></li>
+<li><strong>alert 佔比</strong> — <strong>0.75%</strong></li>
+<li><strong>158 筆 alert 中的協定異常</strong> — <strong>111
+筆（70%）</strong></li>
+<li><strong>ET Open 真實命中</strong> — <strong>0 筆</strong></li>
+</ul>
 <p>三個問題浮出來了，而且是三個不同層次的問題。</p>
 <h2 id="5-問題一flow-事件是重複資料">5. 問題一：flow 事件是重複資料</h2>
 <p>flow 佔 37.5%，是整份 eve.json 裡最大的一塊。但是——</p>
@@ -259,17 +261,17 @@ endpoint、 verdict、L4）。</p>
 <p>Suricata 的 flow 記錄是同一件事的第二份。保留 <code>http</code> /
 <code>dns</code> / <code>tls</code> / <code>ssh</code>——那是 Hubble
 給不了的 L7 細節，也是 Threat Hunting 的主要素材。</p>
-<div class="sourceCode" id="cb12"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">suricata</span><span class="kw">:</span></span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eve</span><span class="kw">:</span></span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">types</span><span class="kw">:</span></span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">alert</span></span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">http</span></span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">dns</span></span>
-<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">tls</span></span>
-<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">ssh</span></span>
-<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">stats</span></span>
-<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="co"># 刻意不含 flow</span></span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode yaml"><code><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">suricata</span><span class="kw">:</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eve</span><span class="kw">:</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">types</span><span class="kw">:</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">alert</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">http</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">dns</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">tls</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">ssh</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="at">stats</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="co"># 刻意不含 flow</span></span></code></pre></div>
 <p>這裡學到一條判斷原則：</p>
 <blockquote>
 <p><strong>決定一份資料該不該收，要看「生態系裡已經有誰在收同樣的東西」，
@@ -289,18 +291,18 @@ eve.json</h2>
 <p>但是<strong>容器裡沒有 cron 去執行它</strong>。設定存在、沒有人跑。
 而且症狀是<strong>節點磁碟滿，不是 Suricata 報錯</strong>。</p>
 <p>解法是一個 sidecar：</p>
-<div class="sourceCode" id="cb14"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> logrotate</span></span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">image</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;{{ .Values.image.repository }}:{{ .Values.image.tag }}&quot;</span></span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">command</span><span class="kw">:</span></span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="kw">- </span><span class="at">/bin/sh</span></span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="kw">- </span><span class="at">-c</span></span>
-<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="kw">- </span><span class="ch">|</span></span>
-<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="at">              while true; do</span></span>
-<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="at">                  logrotate -s /var/log/suricata/.logrotate.state \</span></span>
-<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a><span class="at">                            /etc/logrotate-suricata/logrotate.conf || true</span></span>
-<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a><span class="at">                  sleep {{ .Values.logs.rotate.intervalSeconds }}</span></span>
-<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="at">              done</span></span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre
+class="sourceCode yaml"><code><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> logrotate</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">image</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;{{ .Values.image.repository }}:{{ .Values.image.tag }}&quot;</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">command</span><span class="kw">:</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="kw">- </span><span class="at">/bin/sh</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="kw">- </span><span class="at">-c</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="kw">- </span><span class="ch">|</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="at">              while true; do</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="at">                  logrotate -s /var/log/suricata/.logrotate.state \</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="at">                            /etc/logrotate-suricata/logrotate.conf || true</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a><span class="at">                  sleep {{ .Values.logs.rotate.intervalSeconds }}</span></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a><span class="at">              done</span></span></code></pre></div>
 <p>設定改成以<strong>大小</strong>為準，而不是 image 預設的
 <code>daily</code> + <code>rotate 3</code> （那在 1.2
 GB/天的速率下是每節點 4.8 GB）：</p>
@@ -329,7 +331,7 @@ GB/天的速率下是每節點 4.8 GB）：</p>
 AF_PACKET，序號看起來跳號</li>
 </ol>
 <p>治本的做法是在節點關掉 offload：</p>
-<pre class="shell"><code>ethtool -K eth0 gro off lro off</code></pre>
+<pre><code>ethtool -K eth0 gro off lro off</code></pre>
 <p>但那是改節點而非改 chart
 的事，而且會影響該節點所有流量的效能。在「只看得到
 跨節點流量」的前提下，這組規則提供的資訊量趨近於零，所以直接用
@@ -345,7 +347,7 @@ group:stream-events.rules
 2221034
 2221036</code></pre>
 <p>重建 image 後確認：</p>
-<pre class="shell"><code>docker run --rm --entrypoint sh harbor.example.com/security/suricata-rules:$RULES_TAG -c &#39;
+<pre><code>docker run --rm --entrypoint sh harbor.example.com/security/suricata-rules:$RULES_TAG -c &#39;
   echo &quot;STREAM 啟用中: $(grep -c &quot;^alert .*SURICATA STREAM&quot; /rules/suricata.rules)&quot;
   echo &quot;STREAM 已停用: $(grep -c &quot;^# alert .*SURICATA STREAM&quot; /rules/suricata.rules)&quot;
 &#39;</code></pre>
@@ -398,7 +400,7 @@ Content-Encoding）。而那筆 alert 又被 Alloy 收集回 Loki
 <p><strong>在可觀測性系統裡部署 IDS 要特別小心這種迴圈</strong>：IDS
 的告警會被日誌系統 收走，而日誌系統的流量又被 IDS 看著。</p>
 <h2 id="10-驗證">10. 驗證</h2>
-<pre class="shell"><code># 1) 規則載入
+<pre><code># 1) 規則載入
 kubectl logs -n kube-security -l app.kubernetes.io/name=suricata -c suricata --tail=50 \
   | grep &quot;rules successfully loaded&quot;
 

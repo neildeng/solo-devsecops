@@ -102,12 +102,28 @@
 <strong>情報</strong>。所以在裝 Falco、Suricata、Wazuh
 之前，先把這一層立起來。</p>
 <p>這一層有四個角色，分工很清楚：</p>
-<pre class="text"><code>角色      元件              負責
-────────────────────────────────────────────────────────────────────
-蒐集      Alloy             從節點把日誌與指標撈出來
-日誌倉儲  Loki + SeaweedFS  全量原始日誌，供事後獵捕
-指標倉儲  Prometheus        時序數字，供趨勢與告警
-呈現      Grafana Operator  儀表板、資料來源、告警 —— 全部用 CR 管理</code></pre>
+<ul>
+<li><strong>蒐集</strong>
+<ul>
+<li>元件：Alloy</li>
+<li>負責：從節點把日誌與指標撈出來</li>
+</ul></li>
+<li><strong>日誌倉儲</strong>
+<ul>
+<li>元件：Loki + SeaweedFS</li>
+<li>負責：全量原始日誌，供事後獵捕</li>
+</ul></li>
+<li><strong>指標倉儲</strong>
+<ul>
+<li>元件：Prometheus</li>
+<li>負責：時序數字，供趨勢與告警</li>
+</ul></li>
+<li><strong>呈現</strong>
+<ul>
+<li>元件：Grafana Operator</li>
+<li>負責：儀表板、資料來源、告警 —— 全部用 CR 管理</li>
+</ul></li>
+</ul>
 <p>本文的主軸是：<strong>怎麼確認它真的看得見。</strong>
 這聽起來像廢話，但本文會示範
 兩個「綠燈亮著、實際上少了一半資料」的案例，而它們都不會報錯。</p>
@@ -120,14 +136,14 @@
 的物件儲存</h2>
 <p>Loki 需要 S3 相容的後端。在單機環境用 MinIO 或 SeaweedFS
 都可以，本系列 用 SeaweedFS，因為它輕。</p>
-<pre class="shell"><code>kubectl create ns seaweedfs --dry-run=client -o yaml | kubectl apply -f -
+<pre><code>kubectl create ns seaweedfs --dry-run=client -o yaml | kubectl apply -f -
 
 helm upgrade --install seaweedfs -n seaweedfs \
   --repo https://seaweedfs.github.io/seaweedfs/helm seaweedfs \
   --version 4.48.0 \
   -f ./values/seaweedfs.yaml</code></pre>
 <p>裝好之後把 S3 的憑證取出來給 Loki 用：</p>
-<pre class="shell"><code># 從 SeaweedFS 的 s3.config 取出 identity &quot;loki&quot; 的 AK/SK
+<pre><code># 從 SeaweedFS 的 s3.config 取出 identity &quot;loki&quot; 的 AK/SK
 AK=$(kubectl -n seaweedfs get secret seaweedfs-s3-secret \
   -o jsonpath=&#39;{.data.seaweedfs_s3_config}&#39; | base64 -d \
   | jq -r &#39;.identities[] | select(.name==&quot;loki&quot;) | .credentials[0].accessKey&#39;)
@@ -151,12 +167,14 @@ CCNP。</p>
 chart，三個 Alloy</h2>
 <p>Grafana 的 <code>k8s-monitoring</code> chart 會依你啟用的功能部署數個
 Alloy 實例：</p>
-<pre class="text"><code>實例             角色
-────────────────────────────────────────────
-alloy-metrics    抓指標
-alloy-logs       DaemonSet，讀節點上的日誌檔
-alloy-singleton  叢集事件等單例工作</code></pre>
-<pre class="shell"><code>helm upgrade --install k8s-monitoring -n observability \
+<ul>
+<li><strong><code>alloy-metrics</code></strong> — 抓指標</li>
+<li><strong><code>alloy-logs</code></strong> —
+DaemonSet，讀節點上的日誌檔</li>
+<li><strong><code>alloy-singleton</code></strong> —
+叢集事件等單例工作</li>
+</ul>
+<pre><code>helm upgrade --install k8s-monitoring -n observability \
   --repo https://grafana.github.io/helm-charts k8s-monitoring --version 4.5.2 \
   -f ./values/k8s-monitoring.yaml</code></pre>
 <p>這裡有一個<strong>在後面幾篇會反覆踩到</strong>的設計，先講清楚：</p>
@@ -171,7 +189,7 @@ writer 元件。</strong></p>
 裡引用它，Alloy 會直接啟動失敗：</p>
 <pre><code>component &quot;loki.write.localloki&quot; does not exist or is out of scope</code></pre>
 <p>解法是自己宣告一個：</p>
-<pre class="river"><code>// 名稱刻意不叫 localloki，以免日後啟用 podLogs 時與 chart 產生的元件撞名
+<pre><code>// 名稱刻意不叫 localloki，以免日後啟用 podLogs 時與 chart 產生的元件撞名
 loki.write &quot;extra_localloki&quot; {
   endpoint {
     url               = &quot;http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push&quot;
@@ -192,21 +210,21 @@ DaemonSet，它記錄每個檔案讀到哪裡（positions）。預設的
 重啟後從頭讀一次，同一筆事件 會在下游出現兩次。實測確認過。</p>
 <p>因為 positions 本來就是逐節點的狀態，而 DaemonSet 的 Pod
 永遠回到同一個 節點，所以用 hostPath 比 PVC 更合適：</p>
-<div class="sourceCode" id="cb8"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">alloy-logs</span><span class="kw">:</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">alloy</span><span class="kw">:</span></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">storagePath</span><span class="kw">:</span><span class="at"> /var/lib/alloy</span></span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mounts</span><span class="kw">:</span></span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">extra</span><span class="kw">:</span></span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> alloy-positions</span></span>
-<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">mountPath</span><span class="kw">:</span><span class="at"> /var/lib/alloy</span></span>
-<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">controller</span><span class="kw">:</span></span>
-<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">volumes</span><span class="kw">:</span></span>
-<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">extra</span><span class="kw">:</span></span>
-<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> alloy-positions</span></span>
-<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">hostPath</span><span class="kw">:</span></span>
-<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /var/lib/alloy-positions</span></span>
-<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">type</span><span class="kw">:</span><span class="at"> DirectoryOrCreate</span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode yaml"><code><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">alloy-logs</span><span class="kw">:</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">alloy</span><span class="kw">:</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">storagePath</span><span class="kw">:</span><span class="at"> /var/lib/alloy</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mounts</span><span class="kw">:</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">extra</span><span class="kw">:</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> alloy-positions</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">mountPath</span><span class="kw">:</span><span class="at"> /var/lib/alloy</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">controller</span><span class="kw">:</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">volumes</span><span class="kw">:</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">extra</span><span class="kw">:</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> alloy-positions</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">hostPath</span><span class="kw">:</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /var/lib/alloy-positions</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">type</span><span class="kw">:</span><span class="at"> DirectoryOrCreate</span></span></code></pre></div>
 <p><strong>驗證這件事本身有個陷阱</strong>，值得記一筆。我第一次驗證的方式是：刪掉
 Pod、 等它回來、看 offset 有沒有從 0 開始。結果看起來是對的 ——
 但我讀到的是 <strong>還在終止中的舊 Pod</strong>，DaemonSet 的新舊 Pod
@@ -217,7 +235,7 @@ Pod、 等它回來、看 offset 有沒有從 0 開始。結果看起來是對�
 <h2 id="4-prometheus1529-的綠燈">4. Prometheus：15/29 的綠燈</h2>
 <p>Prometheus 裝好之後，Grafana 上的 target
 面板看起來一片綠。但實際數一數：</p>
-<pre class="shell"><code>kubectl -n observability exec deploy/prometheus-server -c prometheus-server -- \
+<pre><code>kubectl -n observability exec deploy/prometheus-server -c prometheus-server -- \
   wget -qO- &#39;http://localhost:9090/api/v1/targets?state=active&#39; \
   | jq &#39;[.data.activeTargets[] | select(.health==&quot;up&quot;)] | length,
         (.data.activeTargets | length)&#39;</code></pre>
@@ -234,28 +252,40 @@ Pod、 等它回來、看 offset 有沒有從 0 開始。結果看起來是對�
 <h2 id="5-根因node-ip-上的-target-不是-pod-endpoint">5. 根因：node IP
 上的 target 不是 Pod endpoint</h2>
 <p>第 2 篇寫的 Prometheus 放行策略長這樣：</p>
-<div class="sourceCode" id="cb11"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">egress</span><span class="kw">:</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">toEndpoints</span><span class="kw">:</span></span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- {}</span></span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode yaml"><code><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">egress</span><span class="kw">:</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">toEndpoints</span><span class="kw">:</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- {}</span></span></code></pre></div>
 <p><code>toEndpoints: [{}]</code> 的意思是「所有 Pod
 endpoint」。問題是有一整類 target <strong>不是 Pod
 endpoint</strong>：</p>
-<pre class="text"><code>target                埠         跑在哪
-────────────────────────────────────────────
-kubelet               10250      節點
-node-exporter         9100       hostNetwork
-cilium-agent / envoy  9962-9965  hostNetwork</code></pre>
+<ul>
+<li><strong>kubelet</strong>
+<ul>
+<li>埠：10250</li>
+<li>跑在哪：節點</li>
+</ul></li>
+<li><strong>node-exporter</strong>
+<ul>
+<li>埠：9100</li>
+<li>跑在哪：hostNetwork</li>
+</ul></li>
+<li><strong>cilium-agent / envoy</strong>
+<ul>
+<li>埠：9962-9965</li>
+<li>跑在哪：hostNetwork</li>
+</ul></li>
+</ul>
 <p>它們的流量目的地是 <strong>node IP</strong>，<code>toEndpoints</code>
 涵蓋不到。補上：</p>
-<div class="sourceCode" id="cb13"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="co"># node IP 上的 target 不是 Pod endpoint，toEndpoints 涵蓋不到</span></span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="co">#   host        = Prometheus 自己所在的 node</span></span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="co">#   remote-node = 叢集裡的其他 node</span></span>
-<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="co"># 兩個都要，少任何一個就會剩下對應的那幾個 node 抓不到</span></span>
-<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">toEntities</span><span class="kw">:</span></span>
-<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">host</span></span>
-<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">remote-node</span></span></code></pre></div>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode yaml"><code><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="co"># node IP 上的 target 不是 Pod endpoint，toEndpoints 涵蓋不到</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="co">#   host        = Prometheus 自己所在的 node</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="co">#   remote-node = 叢集裡的其他 node</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="co"># 兩個都要，少任何一個就會剩下對應的那幾個 node 抓不到</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">toEntities</span><span class="kw">:</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">host</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">remote-node</span></span></code></pre></div>
 <p><code>host</code> 與 <code>remote-node</code> 要一起寫。只寫
 <code>remote-node</code> 的話，Prometheus 自己所在的那個節點上的 target
 會抓不到 —— 而那只佔四分之一，在面板上 更難發現。</p>
@@ -269,10 +299,10 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb13-1"><a href=
 <p>Cilium 的 Hubble 可以輸出 Prometheus
 指標（<code>hubble_drop_total</code> 等）， 這是後面做 PacketDrop
 儀表板的資料來源。開啟方式：</p>
-<pre class="shell"><code>helm upgrade cilium -n kube-system ... \
+<pre><code>helm upgrade cilium -n kube-system ... \
   --set hubble.metrics.enabled=&#39;{drop:sourceContext=pod;destinationContext=pod,flow,dns}&#39;</code></pre>
 <p>然後你會很自然地想把它接到 Prometheus Operator：</p>
-<pre class="shell"><code>  --set hubble.metrics.serviceMonitor.enabled=true   # ← 不要這樣做</code></pre>
+<pre><code>  --set hubble.metrics.serviceMonitor.enabled=true   # ← 不要這樣做</code></pre>
 <p><strong>這一行會讓 <code>hubble_drop_total</code>
 完全消失，而且沒有任何錯誤訊息。</strong></p>
 <p>原因在 chart 的
@@ -304,7 +334,7 @@ template（<code>templates/hubble/metrics-service.yaml</code>）：</p>
 IP），<code>destination</code> 就是空字串，
 而空字串在查詢結果裡看起來就像這個標籤不存在。</p>
 <p>驗證方式是製造一筆<strong>目的地確實是 Pod</strong> 的丟包：</p>
-<pre class="shell"><code>kubectl run drop-probe --image=busybox:1.36 --restart=Never -n default \
+<pre><code>kubectl run drop-probe --image=busybox:1.36 --restart=Never -n default \
   --command -- sh -c &#39;wget -T 3 -qO- http://loki-gateway.observability:80&#39;</code></pre>
 <p>這條連線會被 default deny 擋下，而且來源與目的都是
 Pod。再查一次就看到
@@ -315,38 +345,38 @@ Pod。再查一次就看到
 部署，儀表板、資料來源、告警規則、通知政策全部 是
 CR。這對一個人維運的環境特別重要：<strong>所有設定都在 Git
 裡，重建環境不需要 記得自己在 UI 上點過什麼。</strong></p>
-<pre class="shell"><code>helm upgrade --install grafana-operator -n observability \
+<pre><code>helm upgrade --install grafana-operator -n observability \
   --repo https://grafana.github.io/helm-charts grafana-operator --version 5.25.0</code></pre>
 <p>然後是資料夾與資料來源：</p>
-<div class="sourceCode" id="cb20"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> grafana.integreatly.org/v1beta1</span></span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> GrafanaFolder</span></span>
-<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> devsecops</span></span>
-<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> observability</span></span>
-<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">instanceSelector</span><span class="kw">:</span></span>
-<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
-<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">dashboards</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;grafana&quot;</span></span>
-<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># 明確設定 uid：沒有 .spec.uid 時 reconciler 可能接管同名的既有資料夾</span></span>
-<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">uid</span><span class="kw">:</span><span class="at"> devsecops</span></span>
-<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">title</span><span class="kw">:</span><span class="at"> DevSecOps</span></span></code></pre></div>
+<div class="sourceCode" id="cb17"><pre
+class="sourceCode yaml"><code><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> grafana.integreatly.org/v1beta1</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> GrafanaFolder</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> devsecops</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> observability</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">instanceSelector</span><span class="kw">:</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">dashboards</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;grafana&quot;</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="co"># 明確設定 uid：沒有 .spec.uid 時 reconciler 可能接管同名的既有資料夾</span></span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">uid</span><span class="kw">:</span><span class="at"> devsecops</span></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">title</span><span class="kw">:</span><span class="at"> DevSecOps</span></span></code></pre></div>
 <p>儀表板指向資料夾用 <code>folderRef</code>，值是該 CR 的
 <strong><code>metadata.name</code>，不是 title</strong>：</p>
-<div class="sourceCode" id="cb21"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> grafana.integreatly.org/v1beta1</span></span>
-<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> GrafanaDashboard</span></span>
-<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> cilium-packetdrop</span></span>
-<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> observability</span></span>
-<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">instanceSelector</span><span class="kw">:</span></span>
-<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
-<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">dashboards</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;grafana&quot;</span></span>
-<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">folderRef</span><span class="kw">:</span><span class="at"> devsecops</span></span>
-<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">resyncPeriod</span><span class="kw">:</span><span class="at"> 5m</span></span>
-<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">json</span><span class="kw">:</span><span class="at"> </span><span class="ch">|</span></span>
-<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">{</span><span class="at"> ... </span><span class="kw">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb18"><pre
+class="sourceCode yaml"><code><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> grafana.integreatly.org/v1beta1</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> GrafanaDashboard</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> cilium-packetdrop</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> observability</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">instanceSelector</span><span class="kw">:</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">matchLabels</span><span class="kw">:</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">dashboards</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;grafana&quot;</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">folderRef</span><span class="kw">:</span><span class="at"> devsecops</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">resyncPeriod</span><span class="kw">:</span><span class="at"> 5m</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">json</span><span class="kw">:</span><span class="at"> </span><span class="ch">|</span></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">{</span><span class="at"> ... </span><span class="kw">}</span></span></code></pre></div>
 <h2 id="9-儀表板設-editable-false-是刻意的">9. 儀表板設
 <code>editable: false</code> 是刻意的</h2>
 <p><code>resyncPeriod: 5m</code> 代表每五分鐘 operator 會以 CR
@@ -356,26 +386,26 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb21-1"><a href=
 連錯誤訊息都沒有。所以本系列所有 operator 管理的儀表板都設
 <code>"editable": false</code>，讓它在 UI 上就是唯讀的。</p>
 <p>真的要從 UI 取回調整，得在下次 resync 前把 JSON 匯出寫回檔案：</p>
-<pre class="shell"><code>kubectl -n observability exec deploy/grafana-deployment -- \
+<pre><code>kubectl -n observability exec deploy/grafana-deployment -- \
   curl -s -u &quot;admin:$GF_PASS&quot; \
   http://localhost:3000/api/dashboards/uid/cilium-packetdrop | jq .dashboard</code></pre>
 <h2 id="10-驗證cr-的-status-不是功能的-status">10. 驗證：CR 的 status
 不是功能的 status</h2>
 <p>這一節是整個系列最重要的一條方法論，後面每一篇都會再碰到它。</p>
 <p>套用儀表板之後：</p>
-<pre class="shell"><code>kubectl get grafanadashboard cilium-packetdrop -n observability -o jsonpath=&#39;{.status}&#39; | jq</code></pre>
+<pre><code>kubectl get grafanadashboard cilium-packetdrop -n observability -o jsonpath=&#39;{.status}&#39; | jq</code></pre>
 <p>畫面會輸出：</p>
-<div class="sourceCode" id="cb24"><pre
-class="sourceCode json"><code class="sourceCode json"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;conditions&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
-<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;message&quot;</span><span class="fu">:</span> <span class="st">&quot;Dashboard was successfully applied to 1 instances&quot;</span><span class="fu">,</span></span>
-<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;reason&quot;</span><span class="fu">:</span> <span class="st">&quot;ApplySuccessful&quot;</span><span class="fu">,</span></span>
-<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;True&quot;</span><span class="fu">,</span></span>
-<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;DashboardSynchronized&quot;</span></span>
-<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
-<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
-<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb21"><pre
+class="sourceCode json"><code><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;conditions&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;message&quot;</span><span class="fu">:</span> <span class="st">&quot;Dashboard was successfully applied to 1 instances&quot;</span><span class="fu">,</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;reason&quot;</span><span class="fu">:</span> <span class="st">&quot;ApplySuccessful&quot;</span><span class="fu">,</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;True&quot;</span><span class="fu">,</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;DashboardSynchronized&quot;</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
 <p><code>ApplySuccessful</code>。但這只證明一件事：<strong>operator 把
 CR 的內容寫進 Grafana 了。</strong>
 它不證明查詢寫對了、不證明指標存在、不證明面板畫得出東西。</p>
@@ -385,7 +415,7 @@ CR 的內容寫進 Grafana 了。</strong>
 </blockquote>
 <p>要驗功能，就得真的跑一次查詢。Grafana 有一個
 <code>/api/ds/query</code> 端點可以用：</p>
-<pre class="shell"><code>kubectl port-forward -n observability svc/grafana-service 13000:3000 &amp;
+<pre><code>kubectl port-forward -n observability svc/grafana-service 13000:3000 &amp;
 
 curl -s -u &quot;admin:$GF_PASS&quot; -H &#39;Content-Type: application/json&#39; \
   -X POST http://127.0.0.1:13000/api/ds/query -d &#39;{

@@ -30,12 +30,12 @@
 產出在 `build/medium/*.html`（不進版控）。用瀏覽器開啟 → 全選 → 複製 →
 貼進 Medium 的空白草稿。第一個大標題會成為文章標題。
 
-### 或者用 Medium 的 import
+**用貼上，不要用 import。** 實測 Medium 的 import 會把 `<pre>` 裡的換行
+吃掉 —— 多行的程式碼區塊會擠成一行，後面還跟著一個空方塊。貼上走的是
+另一條程式碼路徑，多行區塊會正確保留。
 
 `docs/` 是同一份轉檔結果，由 GitHub Pages 公開在
-<https://neildeng.github.io/solo-devsecops/>。把單篇的網址丟進
-<https://medium.com/p/import>，Medium 會自己抓內容、轉格式、上傳圖片 ——
-通常比手動貼上乾淨。
+<https://neildeng.github.io/solo-devsecops/>，方便直接開網頁全選複製。
 
 **改完 Markdown 要記得重新產生 `docs/` 再 commit**，否則 Pages 上是舊的：
 
@@ -47,10 +47,11 @@
 
 | 問題 | 處理方式 |
 |---|---|
-| **不支援表格** | 窄的轉成等寬對齊的程式碼區塊（CJK 算兩欄寬）；超過 76 欄的改用巢狀清單 —— Medium 的程式碼區塊不換行，寬表格會被截掉 |
+| **不支援表格** | 一律轉成巢狀清單。試過等寬對齊的程式碼區塊，但 import 會把換行吃掉、整個表格擠成一行；清單是原生元素不會被動到 |
 | 相對路徑的圖片 | 改寫成 `raw.githubusercontent.com` 的絕對網址，貼上時 Medium 會自己抓回去 |
 | 指向別篇的相對連結 | 改寫成 GitHub 網址（之後由 `series.yaml` 換成 Medium 連結） |
 | 只有兩種標題大小 | H4 以下會被當內文，所以文章只用到 `##` 與 `###` |
+| 程式碼區塊會自動偵測語言 | 拿掉 `<pre>` / `<code>` 的 class，實測 Medium 會把 shell 猜成 Perl |
 
 貼完之後值得檢查的三處：**程式碼區塊有沒有被拆成好幾塊**、**圖片有沒有
 真的上傳**（而不是只剩一行網址）、**清單的縮排層級對不對**。

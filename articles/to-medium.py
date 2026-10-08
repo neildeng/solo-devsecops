@@ -10,9 +10,9 @@ Medium 的編輯器不解析 Markdown —— 它讀的是剪貼簿裡的 rich te
 
 轉換時處理四件 Medium 做不到或會壞掉的事：
 
-1. **表格**。Medium 完全不支援表格，貼進去會散成一堆文字。窄的轉成等寬
-   對齊的程式碼區塊（中日韓字元算兩欄寬，對齊才不會跑掉）；超過寬度上限的
-   改用巢狀清單 —— Medium 的程式碼區塊不換行，寬表格會被截掉看不到。
+1. **表格**。Medium 完全不支援表格，貼進去會散成一堆文字。一律轉成巢狀
+   清單 —— 試過等寬對齊的程式碼區塊，但 Medium 的 import 會把 `<pre>`
+   裡的換行吃掉，整個表格擠成一行。清單是原生元素，不會被動到。
 2. **圖片**。相對路徑 Medium 讀不到，改寫成 raw.githubusercontent.com 的
    絕對網址，貼上時 Medium 會自己抓回去。
 3. **指向別篇文章的相對連結**。改寫成 GitHub 上的網址。
@@ -97,7 +97,7 @@ def table_to_list(head: list[str], body: list[list[str]]) -> list[str]:
     return out
 
 
-def preprocess(md: str, limit: int, name: str) -> tuple[str, list[int]]:
+def preprocess(md: str, limit: int, name: str, tables: str) -> tuple[str, list[int]]:
     """把表格換成程式碼區塊，並改寫相對連結。回傳 (內容, 過寬的表格寬度清單)。"""
     out: list[str] = []
     buf: list[str] = []
@@ -108,14 +108,16 @@ def preprocess(md: str, limit: int, name: str) -> tuple[str, list[int]]:
         if not buf:
             return
         head, body = parse_table(buf)
-        rendered = table_to_pre(head, body)
-        w = max(width(line) for line in rendered)
-        if w > limit:
-            # 超過寬度就改用清單：Medium 的程式碼區塊不換行，寬表格會被截掉
-            wide.append(w)
+        if tables == "list":
             out.extend([*table_to_list(head, body), ""])
         else:
-            out.extend(["```text", *rendered, "```", ""])
+            rendered = table_to_pre(head, body)
+            w = max(width(line) for line in rendered)
+            if w > limit:
+                wide.append(w)
+                out.extend([*table_to_list(head, body), ""])
+            else:
+                out.extend(["```text", *rendered, "```", ""])
         buf.clear()
 
     for line in md.split("\n"):
@@ -153,8 +155,8 @@ hr { border: none; border-top: 1px solid #ddd; margin: 2.5em 0; }
 """
 
 
-def convert(path: pathlib.Path, limit: int, out: pathlib.Path) -> None:
-    md, wide = preprocess(path.read_text(), limit, path.name)
+def convert(path: pathlib.Path, limit: int, out: pathlib.Path, tables: str) -> None:
+    md, wide = preprocess(path.read_text(), limit, path.name, tables)
     out.mkdir(parents=True, exist_ok=True)
     dst = out / (path.stem + ".html")
 
@@ -168,6 +170,12 @@ def convert(path: pathlib.Path, limit: int, out: pathlib.Path) -> None:
          "-V", f"pagetitle={title}", "--css", "style.css", "-o", str(dst)],
         input=md, text=True, check=True,
     )
+    # 拿掉 class：Medium 會據此自動偵測語言，實測把 shell 猜成 Perl
+    html = dst.read_text()
+    html = re.sub(r'<pre class="[^"]*">', "<pre>", html)
+    html = re.sub(r'<code class="[^"]*">', "<code>", html)
+    dst.write_text(html)
+
     note = f"  · {len(wide)} 個寬表格改用清單（最寬 {max(wide)} 欄）" if wide else ""
     print(f"{dst.relative_to(ROOT)}{note}")
 
@@ -208,6 +216,9 @@ def write_index(out: pathlib.Path, files: list[pathlib.Path]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("files", nargs="*", help="要轉的 .md，省略則全部八篇")
+    ap.add_argument("--tables", choices=["list", "pre"], default="list",
+                    help="表格轉成什麼（預設 list；pre 會用等寬程式碼區塊，"
+                         "Medium 的 import 會把換行吃掉，只在手動貼上時堪用）")
     ap.add_argument("--out", type=pathlib.Path, default=DEFAULT_OUT,
                     help="輸出目錄（預設 build/medium；要發佈到 GitHub Pages 就指定 docs）")
     ap.add_argument("--index", action="store_true",
@@ -226,7 +237,7 @@ def main() -> int:
         if not f.exists():
             print(f"找不到 {f}", file=sys.stderr)
             return 1
-        convert(f, args.width, out)
+        convert(f, args.width, out, args.tables)
 
     if args.index:
         write_index(out, files)

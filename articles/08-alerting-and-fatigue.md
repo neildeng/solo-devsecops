@@ -200,8 +200,21 @@ spec:
 
 ```shell
 # 1) 觸發：特權 Pod 製造爆發
-kubectl run burst-probe --image=busybox:1.36 --restart=Never -n default \
-  --overrides='{"spec":{"containers":[{"name":"p","image":"busybox:1.36","securityContext":{"privileged":true},"command":["sh","-c","for i in $(seq 1 40); do ls /etc/shadow; done; sleep 3"]}]}}'
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: burst-probe
+  namespace: default
+spec:
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: busybox:1.36
+      securityContext:
+        privileged: true
+      command: ["sh", "-c", "for i in $(seq 1 40); do ls /etc/shadow; done; sleep 3"]
+EOF
 
 # 2) Wazuh 是否產生收斂後的告警
 kubectl exec -n kube-security wazuh-manager-worker-0 -c wazuh-manager -- \

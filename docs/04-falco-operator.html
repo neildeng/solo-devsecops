@@ -117,13 +117,36 @@
 </ol>
 <h2 id="1-operator-的五個-crd">1. operator 的五個 CRD</h2>
 <p>falco-operator 把一支 Falco 拆成五種資源，每一種各自獨立更新：</p>
-<pre class="text"><code>CRD        負責                本系列用它做什麼
-─────────────────────────────────────────────────────────────────────
-Falco      DaemonSet 本體      調整 Pod 規格、探針
-Config     falco.yaml 的內容   輸出目的地、engine 參數、priority 門檻
-Plugin     事件來源與欄位擴充  k8saudit / json / container / k8smeta
-Rulesfile  規則檔              內建規則集 + 自訂規則，並宣告載入順序
-Component  附屬元件            metacollector</code></pre>
+<ul>
+<li><strong><code>Falco</code></strong>
+<ul>
+<li>負責：DaemonSet 本體</li>
+<li>本系列用它做什麼：調整 Pod 規格、探針</li>
+</ul></li>
+<li><strong><code>Config</code></strong>
+<ul>
+<li>負責：<code>falco.yaml</code> 的內容</li>
+<li>本系列用它做什麼：輸出目的地、engine 參數、<code>priority</code>
+門檻</li>
+</ul></li>
+<li><strong><code>Plugin</code></strong>
+<ul>
+<li>負責：事件來源與欄位擴充</li>
+<li>本系列用它做什麼：<code>k8saudit</code> / <code>json</code> /
+<code>container</code> / <code>k8smeta</code></li>
+</ul></li>
+<li><strong><code>Rulesfile</code></strong>
+<ul>
+<li>負責：規則檔</li>
+<li>本系列用它做什麼：內建規則集 +
+自訂規則，<strong>並宣告載入順序</strong></li>
+</ul></li>
+<li><strong><code>Component</code></strong>
+<ul>
+<li>負責：附屬元件</li>
+<li>本系列用它做什麼：metacollector</li>
+</ul></li>
+</ul>
 <p>這個拆法對偵測工程特別有用的地方在最後一欄：<strong>規則的載入順序可以用欄位
 明確宣告，而不是靠檔名或目錄慣例。</strong> 第 4 節會看到，Falco
 的規則遮蔽機制 讓順序直接決定「哪一條規則會觸發」，能把它寫成 CR
@@ -134,7 +157,7 @@ DaemonSet；要試一個新 plugin 也不會連帶 重算整份設定。</p>
 <p>代價是東西變多了：一支 Falco 要五個 CR 加一支自己維護的 Service（第 5
 篇 會用到）。下一節的四個步驟有順序相依，照著走就不會卡。</p>
 <h2 id="2-四個步驟有順序相依">2. 四個步驟，有順序相依</h2>
-<pre class="shell"><code>kubectl create ns kube-security --dry-run=client -o yaml | kubectl apply -f -
+<pre><code>kubectl create ns kube-security --dry-run=client -o yaml | kubectl apply -f -
 
 # NP：只需要 namespace 內部互連
 kubectl apply -n kube-security -f ./manifests/network-policies/allow-intra-namespace.yaml
@@ -164,23 +187,23 @@ helm upgrade --install falcosidekick -n kube-security \
 <p>第 4 步值得特別說明：falcosidekick 是一支獨立的服務，operator
 不會幫你把 Falco 指過去。<strong>兩端要自己接起來</strong> —— 在
 <code>Config</code> CR 裡宣告 <code>http_output</code>：</p>
-<div class="sourceCode" id="cb3"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> instance.falcosecurity.dev/v1alpha1</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Config</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> falco-config</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> kube-security</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">http_output</span><span class="kw">:</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">url</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;http://falcosidekick:2801/&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode yaml"><code><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> instance.falcosecurity.dev/v1alpha1</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Config</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> falco-config</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">namespace</span><span class="kw">:</span><span class="at"> kube-security</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">config</span><span class="kw">:</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">http_output</span><span class="kw">:</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">url</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;http://falcosidekick:2801/&quot;</span></span></code></pre></div>
 <h2 id="3-configmap-的鍵名必須正好是-rulesyaml">3. ConfigMap
 的鍵名必須正好是 <code>rules.yaml</code></h2>
 <p>上面第 2 步用的是：</p>
-<pre class="shell"><code>--from-file=rules.yaml=./values/falco/rules-syscall.yaml</code></pre>
+<pre><code>--from-file=rules.yaml=./values/falco/rules-syscall.yaml</code></pre>
 <p>而不是直覺的：</p>
-<pre class="shell"><code>--from-file=./values/falco/rules-syscall.yaml   # ← 鍵名會變成 rules-syscall.yaml</code></pre>
+<pre><code>--from-file=./values/falco/rules-syscall.yaml   # ← 鍵名會變成 rules-syscall.yaml</code></pre>
 <p><code>Rulesfile</code> CR 寫死了 <code>rules.yaml</code>
 這個鍵名。用檔名當鍵會讓 artifact sidecar
 反覆重啟，而日誌裡只有一行：</p>
@@ -209,41 +232,41 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb3-1"><a href="
 <p>operator 的 <code>Rulesfile</code> CR 用 <code>priority</code>
 欄位控制載入順序 —— 注意這個 <code>priority</code> 和規則裡的
 <code>priority:</code> 是兩回事：</p>
-<div class="sourceCode" id="cb8"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> artifact.falcosecurity.dev/v1alpha1</span></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Rulesfile</span></span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> falco-rules</span></span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">priority</span><span class="kw">:</span><span class="at"> </span><span class="dv">10</span><span class="at">        # 數字越大越晚載入</span></span>
-<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ociArtifact</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> ... </span><span class="kw">}</span></span>
-<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
-<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> artifact.falcosecurity.dev/v1alpha1</span></span>
-<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Rulesfile</span></span>
-<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> k8saudit-rules</span></span>
-<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">priority</span><span class="kw">:</span><span class="at"> </span><span class="dv">20</span></span>
-<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ociArtifact</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> ... </span><span class="kw">}</span></span>
-<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
-<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> artifact.falcosecurity.dev/v1alpha1</span></span>
-<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Rulesfile</span></span>
-<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> koad-syscall</span></span>
-<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">priority</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span><span class="at">        # 自訂規則最後載入</span></span>
-<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">configMapRef</span><span class="kw">:</span></span>
-<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> koad-rules-syscall</span></span>
-<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
-<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> artifact.falcosecurity.dev/v1alpha1</span></span>
-<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Rulesfile</span></span>
-<span id="cb8-29"><a href="#cb8-29" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
-<span id="cb8-30"><a href="#cb8-30" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> koad-k8saudit</span></span>
-<span id="cb8-31"><a href="#cb8-31" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb8-32"><a href="#cb8-32" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">priority</span><span class="kw">:</span><span class="at"> </span><span class="dv">61</span></span>
-<span id="cb8-33"><a href="#cb8-33" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">configMapRef</span><span class="kw">:</span></span>
-<span id="cb8-34"><a href="#cb8-34" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> koad-rules-k8saudit</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode yaml"><code><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> artifact.falcosecurity.dev/v1alpha1</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Rulesfile</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> falco-rules</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">priority</span><span class="kw">:</span><span class="at"> </span><span class="dv">10</span><span class="at">        # 數字越大越晚載入</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ociArtifact</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> ... </span><span class="kw">}</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> artifact.falcosecurity.dev/v1alpha1</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Rulesfile</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> k8saudit-rules</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">priority</span><span class="kw">:</span><span class="at"> </span><span class="dv">20</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ociArtifact</span><span class="kw">:</span><span class="at"> </span><span class="kw">{</span><span class="at"> ... </span><span class="kw">}</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> artifact.falcosecurity.dev/v1alpha1</span></span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Rulesfile</span></span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> koad-syscall</span></span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">priority</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span><span class="at">        # 自訂規則最後載入</span></span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">configMapRef</span><span class="kw">:</span></span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> koad-rules-syscall</span></span>
+<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a><span class="pp">---</span></span>
+<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a><span class="fu">apiVersion</span><span class="kw">:</span><span class="at"> artifact.falcosecurity.dev/v1alpha1</span></span>
+<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a><span class="fu">kind</span><span class="kw">:</span><span class="at"> Rulesfile</span></span>
+<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a><span class="fu">metadata</span><span class="kw">:</span></span>
+<span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">name</span><span class="kw">:</span><span class="at"> koad-k8saudit</span></span>
+<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">priority</span><span class="kw">:</span><span class="at"> </span><span class="dv">61</span></span>
+<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">configMapRef</span><span class="kw">:</span></span>
+<span id="cb7-34"><a href="#cb7-34" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">name</span><span class="kw">:</span><span class="at"> koad-rules-k8saudit</span></span></code></pre></div>
 <p>順序有兩個硬性要求，兩者都指向「自訂規則必須後於內建載入」：</p>
 <ol type="1">
 <li>自訂的 k8saudit 規則用到 <code>k8s_audit_rules.yaml</code> 定義的
@@ -251,12 +274,12 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb8-1"><a href="
 <pre><code>LOAD_ERR_VALIDATE: Undefined macro &#39;kevt&#39; used in filter.</code></pre></li>
 <li>檔尾用 <code>enabled: false</code>
 停用內建規則，<strong>覆寫只在後載入時生效</strong>：
-<div class="sourceCode" id="cb10"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">rule</span><span class="kw">:</span><span class="at"> Create Privileged Pod</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div></li>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode yaml"><code><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">- </span><span class="fu">rule</span><span class="kw">:</span><span class="at"> Create Privileged Pod</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div></li>
 </ol>
 <p>套用後務必確認實際產生的順序：</p>
-<pre class="shell"><code>kubectl -n kube-security exec ds/falco -c falco -- \
+<pre><code>kubectl -n kube-security exec ds/falco -c falco -- \
   grep -A6 &#39;^rules_files&#39; /etc/falco/falco.yaml</code></pre>
 <p>我自己在這裡提過一個錯誤的建議：把 <code>rules.d</code>
 排到最前面。實測直接 <code>LOAD_ERR_VALIDATE</code> 失敗 ——
@@ -267,11 +290,11 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb10-1"><a href=
 <p>第一次部署 Falco 的時候，Pod 要好幾分鐘才
 Ready。「有點慢」是個很模糊的 感覺，所以先把它變成數字。</p>
 <p>看 init 容器在做什麼：</p>
-<pre class="shell"><code>kubectl -n kube-security logs ds/falco -c falcoctl-artifact-install --tail=20</code></pre>
+<pre><code>kubectl -n kube-security logs ds/falco -c falcoctl-artifact-install --tail=20</code></pre>
 <p>它在從 <code>ghcr.io</code> 拉 OCI artifact：四個 plugin 加兩個
 ruleset，<strong>每個節點 各拉一份</strong>。</p>
 <p>直接量一個 5 MB 的 blob：</p>
-<pre class="shell"><code># 直連 ghcr.io
+<pre><code># 直連 ghcr.io
 time curl -sL -o /dev/null https://ghcr.io/v2/falcosecurity/plugins/plugin/k8saudit/blobs/sha256:...</code></pre>
 <p>畫面會輸出：</p>
 <pre><code>real    2m28.412s</code></pre>
@@ -280,27 +303,27 @@ time curl -sL -o /dev/null https://ghcr.io/v2/falcosecurity/plugins/plugin/k8sau
 <h3 id="解法本機-pull-through-mirror">解法：本機 pull-through
 mirror</h3>
 <p>跑一個 registry 當快取：</p>
-<div class="sourceCode" id="cb15"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co"># registry/compose.yaml</span></span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">services</span><span class="kw">:</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mirror-ghcr-io</span><span class="kw">:</span></span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> registry:3</span></span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">container_name</span><span class="kw">:</span><span class="at"> mirror-ghcr-io</span></span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">networks</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">kind</span><span class="kw">]</span></span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">environment</span><span class="kw">:</span></span>
-<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">REGISTRY_PROXY_REMOTEURL</span><span class="kw">:</span><span class="at"> https://ghcr.io</span></span>
-<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ports</span><span class="kw">:</span></span>
-<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="st">&quot;12345:5000&quot;</span></span>
-<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="fu">networks</span><span class="kw">:</span></span>
-<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kind</span><span class="kw">:</span></span>
-<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">external</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
+<div class="sourceCode" id="cb14"><pre
+class="sourceCode yaml"><code><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co"># registry/compose.yaml</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">services</span><span class="kw">:</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mirror-ghcr-io</span><span class="kw">:</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">image</span><span class="kw">:</span><span class="at"> registry:3</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">container_name</span><span class="kw">:</span><span class="at"> mirror-ghcr-io</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">networks</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">kind</span><span class="kw">]</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">environment</span><span class="kw">:</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">REGISTRY_PROXY_REMOTEURL</span><span class="kw">:</span><span class="at"> https://ghcr.io</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ports</span><span class="kw">:</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">- </span><span class="st">&quot;12345:5000&quot;</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="fu">networks</span><span class="kw">:</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">kind</span><span class="kw">:</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">external</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
 <p>然後把所有 <code>ociArtifact</code> 指過去：</p>
-<div class="sourceCode" id="cb16"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ociArtifact</span><span class="kw">:</span></span>
-<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">reference</span><span class="kw">:</span><span class="at"> falcosecurity/plugins/plugin/k8saudit:latest</span></span>
-<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">registry</span><span class="kw">:</span></span>
-<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">name</span><span class="kw">:</span><span class="at"> mirror-ghcr-io:5000</span></span>
-<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">plainHTTP</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
+<div class="sourceCode" id="cb15"><pre
+class="sourceCode yaml"><code><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ociArtifact</span><span class="kw">:</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">reference</span><span class="kw">:</span><span class="at"> falcosecurity/plugins/plugin/k8saudit:latest</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">registry</span><span class="kw">:</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">name</span><span class="kw">:</span><span class="at"> mirror-ghcr-io:5000</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">plainHTTP</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
 <p>再量一次（快取命中）：</p>
 <pre><code>real    0m0.008s</code></pre>
 <p><strong>148 秒 → 0.0085 秒。</strong> 整個重啟時間從 5 分鐘降到 31
@@ -314,22 +337,25 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb16-1"><a href=
 <p>falcoctl 是跑在容器裡的一個程式，它用自己的 HTTP client 去拉
 artifact， <strong>完全不經過 containerd</strong>。所以要讓它走
 mirror，三件事缺一不可：</p>
-<pre class="text"><code>要件      做什麼
-─────────────────────────────────────────────────────────────
-CR 設定   registry.name + plainHTTP: true
-DNS       CoreDNS 的 hosts 區塊讓 Pod 解析得到 mirror-ghcr-io
-網路策略  CCNP 放行 —— 而且要用 toCIDR 不是 toEntities</code></pre>
+<ul>
+<li><strong>CR 設定</strong> — <code>registry.name</code> +
+<code>plainHTTP: true</code></li>
+<li><strong>DNS</strong> — CoreDNS 的 <code>hosts</code> 區塊讓 Pod
+解析得到 <code>mirror-ghcr-io</code></li>
+<li><strong>網路策略</strong> — CCNP 放行 —— 而且要用
+<code>toCIDR</code> 不是 <code>toEntities</code></li>
+</ul>
 <p>最後那一點值得說明：mirror 跑在 kind 的 Docker network
 裡，<strong>和節點同網段 但它不是節點</strong>。Cilium 把它歸類為
 <code>reserved:world</code>，所以
 <code>toEntities: [host, remote-node]</code> 涵蓋不到，只能用
 <code>toCIDR</code>：</p>
-<div class="sourceCode" id="cb19"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">egress</span><span class="kw">:</span></span>
-<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">toCIDR</span><span class="kw">:</span></span>
-<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">192.168.247.8/32    # docker inspect mirror-ghcr-io 取得</span></span>
-<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">toPorts</span><span class="kw">:</span></span>
-<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">ports</span><span class="kw">:</span><span class="at"> </span><span class="kw">[{</span><span class="at"> </span><span class="fu">port</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;5000&quot;</span><span class="kw">,</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="fu"> </span><span class="at">TCP </span><span class="kw">}]</span></span></code></pre></div>
+<div class="sourceCode" id="cb17"><pre
+class="sourceCode yaml"><code><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">egress</span><span class="kw">:</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">- </span><span class="fu">toCIDR</span><span class="kw">:</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="at">192.168.247.8/32    # docker inspect mirror-ghcr-io 取得</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">toPorts</span><span class="kw">:</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">ports</span><span class="kw">:</span><span class="at"> </span><span class="kw">[{</span><span class="at"> </span><span class="fu">port</span><span class="kw">:</span><span class="fu"> </span><span class="st">&quot;5000&quot;</span><span class="kw">,</span><span class="at"> </span><span class="fu">protocol</span><span class="kw">:</span><span class="fu"> </span><span class="at">TCP </span><span class="kw">}]</span></span></code></pre></div>
 <p>CoreDNS 的部分要注意：改 CoreDNS 的 ConfigMap 要用
 <code>kubectl replace</code> 而不是
 <code>apply</code>（<code>apply</code> 會因為 last-applied
@@ -344,23 +370,23 @@ sidecar。</strong></p>
 <p>artifact 容器的預設探針是 45 秒。在沒有 mirror 的情況下拉一個 plugin
 要 148 秒 —— 探針會在它拉完之前就把它殺掉，然後無限重啟。症狀是
 <code>CrashLoopBackOff</code>，但日誌裡看起來「正在下載中」一切正常。</p>
-<div class="sourceCode" id="cb21"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">podTemplateSpec</span><span class="kw">:</span></span>
-<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">spec</span><span class="kw">:</span></span>
-<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">initContainers</span><span class="kw">:</span></span>
-<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> artifact-operator</span></span>
-<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">livenessProbe</span><span class="kw">:</span></span>
-<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">failureThreshold</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span></span></code></pre></div>
+<div class="sourceCode" id="cb19"><pre
+class="sourceCode yaml"><code><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">podTemplateSpec</span><span class="kw">:</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">spec</span><span class="kw">:</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">initContainers</span><span class="kw">:</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> artifact-operator</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">livenessProbe</span><span class="kw">:</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a><span class="at">            </span><span class="fu">failureThreshold</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span></span></code></pre></div>
 <p><strong>二、<code>podTemplateSpec</code> 必須包含
 <code>containers</code>。</strong></p>
 <p>即使你只想改 initContainer，也要把 <code>containers</code>
 寫出來，否則 CR 會被拒絕：</p>
-<div class="sourceCode" id="cb22"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">containers</span><span class="kw">:</span></span>
-<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> falco</span></span>
-<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">tty</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
+<div class="sourceCode" id="cb20"><pre
+class="sourceCode yaml"><code><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">containers</span><span class="kw">:</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">- </span><span class="fu">name</span><span class="kw">:</span><span class="at"> falco</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="at">          </span><span class="fu">tty</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div>
 <h2 id="7-驗證">7. 驗證</h2>
-<pre class="shell"><code># 規則有載入，且覆寫生效（Create Privileged Pod 應為 false）
+<pre><code># 規則有載入，且覆寫生效（Create Privileged Pod 應為 false）
 kubectl -n kube-security exec ds/falco -c falco -- \
   falco --list 2&gt;/dev/null | grep -c &quot;Rule&quot;
 
@@ -368,10 +394,23 @@ kubectl -n kube-security exec ds/falco -c falco -- \
 kubectl -n kube-security exec ds/falco -c falco -- \
   grep -A6 &#39;^rules_files&#39; /etc/falco/falco.yaml</code></pre>
 <p>最後做一次真實觸發 —— 建立一個特權 Pod：</p>
-<pre class="shell"><code>kubectl run privileged-probe --image=busybox:1.36 --restart=Never -n default \
-  --overrides=&#39;{&quot;spec&quot;:{&quot;containers&quot;:[{&quot;name&quot;:&quot;p&quot;,&quot;image&quot;:&quot;busybox:1.36&quot;,&quot;securityContext&quot;:{&quot;privileged&quot;:true},&quot;command&quot;:[&quot;sh&quot;,&quot;-c&quot;,&quot;sleep 5&quot;]}]}}&#39;</code></pre>
+<pre><code>kubectl apply -f - &lt;&lt;&#39;EOF&#39;
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privileged-probe
+  namespace: default
+spec:
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: busybox:1.36
+      securityContext:
+        privileged: true
+      command: [&quot;sh&quot;, &quot;-c&quot;, &quot;sleep 5&quot;]
+EOF</code></pre>
 <p>然後看 Falco 的輸出：</p>
-<pre class="shell"><code>kubectl -n kube-security logs ds/falco -c falco --tail=20 | grep -i privileg</code></pre>
+<pre><code>kubectl -n kube-security logs ds/falco -c falco --tail=20 | grep -i privileg</code></pre>
 <p><strong>偵測工具的驗證一律要用「真的觸發一次」，不能只看規則數量。</strong>
 規則載入成功與規則會觸發是兩回事 —— 這是第 3 篇那句「CR 的 status 不是
 功能的 status」在偵測領域的版本。</p>
