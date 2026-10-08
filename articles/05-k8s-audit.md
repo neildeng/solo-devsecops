@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (5)：控制平面偵測
 
+17 條稽核規則一條都沒觸發。拆出四個獨立的根因，沒有一個會報錯。
+
 ![一個人的 DevSecOps (5)：控制平面偵測](images/covers/05-k8s-audit-cover.png)
 
 ## 背景說明

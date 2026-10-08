@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (7)：從事件到告警
 
+「告警大腦」的腦在規則層，不在輸出通道。同一次攻擊：逐筆 133 則，收斂後 1 則。
+
 ![一個人的 DevSecOps (7)：從事件到告警](images/covers/07-wazuh-brain-cover.png)
 
 ## 背景說明

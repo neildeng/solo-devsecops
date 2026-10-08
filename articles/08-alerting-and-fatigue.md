@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (8)：最後一哩與告警疲勞
 
+從每分鐘 300 則到只剩真實事件。Grafana alerting 的四個靜默失敗點，以及整個系列的總結。
+
 ![一個人的 DevSecOps (8)：最後一哩與告警疲勞](images/covers/08-alerting-and-fatigue-cover.png)
 
 ## 背景說明

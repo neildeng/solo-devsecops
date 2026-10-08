@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (2)：零信任的地基
 
+default deny 先立起來，再逐條放行。Cilium CCNP 的四個坑，共同點是都不報錯。
+
 ![一個人的 DevSecOps (2)：零信任的地基](images/covers/02-zero-trust-network-cover.png)
 
 ## 背景說明

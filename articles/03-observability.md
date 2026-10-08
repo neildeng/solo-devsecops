@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (3)：看得見才管得住
 
+Prometheus 一片綠燈，實際上 29 個 target 只有 15 個活著。三個「畫面正常但少了資料」的案例。
+
 ![一個人的 DevSecOps (3)：看得見才管得住](images/covers/03-observability-cover.png)
 
 ## 背景說明

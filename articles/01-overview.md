@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (1)：先畫地圖，再動手
 
+三個偵測來源、兩條資料路徑、一個出口。以及單機 kind 上那個會騙過 scheduler 的資源陷阱。
+
 ![一個人的 DevSecOps (1)：先畫地圖，再動手](images/covers/01-overview-cover.png)
 
 ## 背景說明

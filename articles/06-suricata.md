@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (6)：網路層偵測
 
+裝完先量組成：alert 只佔 0.75%，其中 70% 是環境造成的誤報。在抱怨出現之前就先降噪。
+
 ![一個人的 DevSecOps (6)：網路層偵測](images/covers/06-suricata-cover.png)
 
 ## 背景說明

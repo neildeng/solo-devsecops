@@ -15,7 +15,7 @@ articles:
 
   - file: 01-overview.md
     title: 先畫地圖，再動手
-    url: ""
+    url: "https://medium.com/@neil.deng/%E4%B8%80%E5%80%8B%E4%BA%BA%E7%9A%84-devsecops-1-%E5%85%88%E7%95%AB%E5%9C%B0%E5%9C%96-%E5%86%8D%E5%8B%95%E6%89%8B-f2290bcdb387"
 
   - file: 02-zero-trust-network.md
     title: 零信任的地基

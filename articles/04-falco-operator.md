@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (4)：主機層偵測
 
+Falco 一個事件只觸發一條規則，先載入的贏。以及把 OCI artifact 從 148 秒降到 0.008 秒。
+
 ![一個人的 DevSecOps (4)：主機層偵測](images/covers/04-falco-operator-cover.png)
 
 ## 背景說明
