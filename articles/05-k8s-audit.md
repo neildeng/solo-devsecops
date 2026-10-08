@@ -409,3 +409,4 @@ ServiceAccount 加對應的 kubeconfig。
 - [Kubernetes Auditing](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/)
 - [Falco k8saudit plugin](https://github.com/falcosecurity/plugins/tree/main/plugins/k8saudit)
 - [Falco Supported Fields for Conditions](https://falco.org/docs/reference/rules/supported-fields/)
+- [KOAD — Kubernetes 攻擊情境（iThome 鐵人賽系列）](https://ithelp.ithome.com.tw/users/20108446/ironman/9644) —— 本系列 `values/falco/` 裡的自訂規則依這份情境編號（S01–S35）命名

@@ -412,4 +412,4 @@ kubectl -n kube-security logs ds/falco -c falco --tail=20 | grep -i privileg
 - [Falco Operator](https://falco.org/docs/setup/operator/)
 - [Falco Rules](https://falco.org/docs/rules/)
 - [falcoctl](https://github.com/falcosecurity/falcoctl)
-- KOAD 攻擊情境規則集（本系列使用的自訂規則，連結待補）
+- [KOAD — Kubernetes 攻擊情境（iThome 鐵人賽系列）](https://ithelp.ithome.com.tw/users/20108446/ironman/9644) —— 本系列 `values/falco/` 裡的自訂規則依這份情境編號（S01–S35）命名
