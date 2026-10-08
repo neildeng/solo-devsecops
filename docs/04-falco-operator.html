@@ -191,15 +191,16 @@ spec:
   configMapRef:
     name: koad-rules-k8saudit</code></pre>
 <p>順序有兩個硬性要求，兩者都指向「自訂規則必須後於內建載入」：</p>
-<ol type="1">
-<li>自訂的 k8saudit 規則用到 <code>k8s_audit_rules.yaml</code> 定義的
-<code>kevt</code> macro， 先於它載入會<strong>整檔失敗</strong>：
-<pre><code>LOAD_ERR_VALIDATE: Undefined macro &#39;kevt&#39; used in filter.</code></pre></li>
-<li>檔尾用 <code>enabled: false</code>
-停用內建規則，<strong>覆寫只在後載入時生效</strong>：
+<p><strong>1.</strong> 自訂的 k8saudit 規則用到
+<code>k8s_audit_rules.yaml</code> 定義的 <code>kevt</code> macro，
+先於它載入會<strong>整檔失敗</strong>：</p>
+<pre><code>LOAD_ERR_VALIDATE: Undefined macro &#39;kevt&#39; used in filter.
+</code></pre>
+<p><strong>2.</strong> 檔尾用 <code>enabled: false</code>
+停用內建規則，<strong>覆寫只在後載入時生效</strong>：</p>
 <pre><code>- rule: Create Privileged Pod
-  enabled: false</code></pre></li>
-</ol>
+  enabled: false
+</code></pre>
 <p>套用後務必確認實際產生的順序：</p>
 <pre><code>kubectl -n kube-security exec ds/falco -c falco -- \
   grep -A6 &#39;^rules_files&#39; /etc/falco/falco.yaml</code></pre>

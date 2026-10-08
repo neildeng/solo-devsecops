@@ -19,11 +19,11 @@ articles:
 
   - file: 02-zero-trust-network.md
     title: 零信任的地基
-    url: ""
+    url: "https://medium.com/@neil.deng/%E4%B8%80%E5%80%8B%E4%BA%BA%E7%9A%84-devsecops-2-%E9%9B%B6%E4%BF%A1%E4%BB%BB%E7%9A%84%E5%9C%B0%E5%9F%BA-aa3f999793b7"
 
   - file: 03-observability.md
     title: 看得見才管得住
-    url: ""
+    url: "https://medium.com/@neil.deng/%E4%B8%80%E5%80%8B%E4%BA%BA%E7%9A%84-devsecops-3-%E7%9C%8B%E5%BE%97%E8%A6%8B%E6%89%8D%E7%AE%A1%E5%BE%97%E4%BD%8F-09f58ea5ae0c"
 
   - file: 04-falco-operator.md
     title: 主機層偵測

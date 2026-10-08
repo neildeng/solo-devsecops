@@ -101,8 +101,79 @@ def table_to_list(head: list[str], body: list[list[str]]) -> list[str]:
     return out
 
 
+def flatten_nested_blocks(md: str) -> tuple[str, int]:
+    """把縮排在清單項目裡的程式碼區塊拉到最外層。
+
+    Medium 不支援清單項目裡再放區塊元素 —— 實測縮排的程式碼區塊會變成一個
+    空方塊，內容掉到清單外面，而且清單的編號會斷掉另起一個。
+    GitHub 上巢狀是正常的，所以不改原始碼，在這裡攤平。
+
+    攤平後編號改以粗體保留（**1.** …），讀起來一樣，但每一塊都是頂層元素。
+    """
+    lines = md.split("\n")
+    out: list[str] = []
+    i, n, flattened = 0, len(lines), 0
+
+    while i < n:
+        line = lines[i]
+        if line.startswith("```"):                    # 頂層區塊原樣帶過
+            out.append(line)
+            i += 1
+            while i < n and not lines[i].startswith("```"):
+                out.append(lines[i]); i += 1
+            if i < n:
+                out.append(lines[i]); i += 1
+            continue
+
+        m = re.match(r"^(\d+)\.\s+(.*)$|^([-*])\s+(.*)$", line)
+        if not m:
+            out.append(line); i += 1
+            continue
+
+        # 收集這個清單區塊（項目行 + 其縮排的後續行）
+        block, j = [line], i + 1
+        while j < n and (lines[j].startswith((" ", "\t")) or not lines[j].strip()
+                         or re.match(r"^(\d+\.|[-*])\s", lines[j])):
+            if not lines[j].strip() and j + 1 < n and not lines[j + 1].startswith((" ", "\t")) \
+               and not re.match(r"^(\d+\.|[-*])\s", lines[j + 1]):
+                break
+            block.append(lines[j]); j += 1
+
+        if not any(re.match(r"^\s+```", b) for b in block):
+            out.extend(block); i = j
+            continue
+
+        flattened += 1
+        # 退幾格要看實際縮排，不能寫死 —— 多退一格會把區塊內部的層級吃掉
+        # （YAML 的兩格縮排被當成清單縮排的一部分）
+        indent = min(len(b) - len(b.lstrip(" "))
+                     for b in block if re.match(r"^\s+```", b))
+        for b in block:
+            mk = re.match(r"^(\d+)\.\s+(.*)$", b)
+            if mk:
+                out.extend(["", f"**{mk.group(1)}.** {mk.group(2)}"])
+                continue
+            mb = re.match(r"^[-*]\s+(.*)$", b)
+            if mb:
+                out.extend(["", f"**·** {mb.group(1)}"])
+                continue
+            ded = b[indent:] if b[:indent].strip() == "" else b.lstrip(" ")
+            if ded.startswith("```"):
+                out.extend(["", ded])
+            else:
+                out.append(ded)
+        out.append("")
+        i = j
+
+    return "\n".join(out), flattened
+
+
 def preprocess(md: str, limit: int, name: str, tables: str) -> tuple[str, list[int]]:
     """把表格換成程式碼區塊，並改寫相對連結。回傳 (內容, 過寬的表格寬度清單)。"""
+    md, flattened = flatten_nested_blocks(md)
+    if flattened:
+        print(f"  · 攤平 {flattened} 組含程式碼區塊的清單")
+
     out: list[str] = []
     buf: list[str] = []
     wide: list[int] = []
