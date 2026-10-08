@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (6)：網路層偵測
 
+![一個人的 DevSecOps (6)：網路層偵測](images/covers/06-suricata-cover.png)
+
 ## 背景說明
 
 三個偵測來源的最後一個：Suricata。它看的是**封包**——C2 回連、內網掃描、

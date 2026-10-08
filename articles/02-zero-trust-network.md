@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (2)：零信任的地基
 
+![一個人的 DevSecOps (2)：零信任的地基](images/covers/02-zero-trust-network-cover.png)
+
 ## 背景說明
 
 上一篇畫完地圖，這一篇先把地基打好：**在任何應用進來之前，先讓叢集預設拒絕

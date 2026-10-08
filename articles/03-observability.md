@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (3)：看得見才管得住
 
+![一個人的 DevSecOps (3)：看得見才管得住](images/covers/03-observability-cover.png)
+
 ## 背景說明
 
 偵測工具產生的是**事件**，事件要有地方放、有辦法查、有人看得懂，才會變成

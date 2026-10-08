@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (5)：控制平面偵測
 
+![一個人的 DevSecOps (5)：控制平面偵測](images/covers/05-k8s-audit-cover.png)
+
 ## 背景說明
 
 Falco 看得到容器裡執行了什麼行程，但看不到**誰呼叫了 Kubernetes API**。

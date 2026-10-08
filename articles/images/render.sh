@@ -18,12 +18,14 @@ if [[ ${#targets[@]} -eq 0 ]]; then
 fi
 
 for svg in "${targets[@]}"; do
+    svg="$(cd "$(dirname "$svg")" && pwd)/$(basename "$svg")"   # 轉絕對路徑
+    svgdir="$(dirname "$svg")"                                   # 產物放在來源旁邊
     base="$(basename "$svg" .svg)"
     # 從 SVG 自己的 width/height 取畫布尺寸，不要在兩個地方各寫一次
     w="$(sed -n 's/.*[^-]width="\([0-9]*\)".*/\1/p' "$svg" | head -1)"
     h="$(sed -n 's/.*[^-]height="\([0-9]*\)".*/\1/p' "$svg" | head -1)"
 
-    cat > "$DIR/_shot.html" <<EOF
+    cat > "$svgdir/_shot.html" <<EOF
 <!doctype html><html><head><meta charset="utf-8">
 <style>html,body{margin:0;padding:0;background:#fff}img{display:block;width:${w}px;height:${h}px}</style>
 </head><body><img src="$(basename "$svg")"></body></html>
@@ -33,8 +35,8 @@ EOF
     "$CHROME" --headless --disable-gpu --hide-scrollbars \
         --force-device-scale-factor=2 --window-size="$w,$h" \
         --default-background-color=FFFFFFFF \
-        --screenshot="$DIR/$base.png" "file://$DIR/_shot.html" 2>/dev/null
+        --screenshot="$svgdir/$base.png" "file://$svgdir/_shot.html" 2>/dev/null
 
-    rm -f "$DIR/_shot.html"
+    rm -f "$svgdir/_shot.html"
     echo "$base.png  ($((w*2))x$((h*2)))"
 done

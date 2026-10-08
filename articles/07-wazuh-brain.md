@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (7)：從事件到告警
 
+![一個人的 DevSecOps (7)：從事件到告警](images/covers/07-wazuh-brain-cover.png)
+
 ## 背景說明
 
 到這裡三個偵測來源都有了，而且都在往 Loki 送。看起來很完整，但有一個根本

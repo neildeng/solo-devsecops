@@ -71,11 +71,20 @@
 
 已完成：
 
-- 第 1 篇：[整體架構圖](images/01-architecture.png)（2960×2080，直接貼進 Medium）
+- 八篇的封面圖（1200×630），`images/covers/`。由 `make-covers.py` 依
+  `series.yaml` 產生，編號、篇名、以及底部那排元件要亮哪幾個都在腳本裡。
+  封面已插在每篇的 H1 之後 —— **Medium 取第一張圖當預覽圖**，所以順序不能換。
+- 第 1 篇：[整體架構圖](images/01-architecture.png)（2960×2080）
 
 圖檔放在 [`images/`](images/)。SVG 是原稿，要改內容就改 SVG，再跑
 `./images/render.sh` 重新輸出 PNG（用 Chrome headless 轉檔，CJK 字型才不會
 變成方框；輸出一律 2 倍圖，Medium 在高解析螢幕上才不會糊）。
+
+封面要改標題或配色就改 `images/make-covers.py`，它會重新產生八張：
+
+```shell
+./articles/images/make-covers.py
+```
 
 發佈前建議再補上：
 

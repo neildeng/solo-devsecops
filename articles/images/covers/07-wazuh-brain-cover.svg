@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630"
+     font-family="-apple-system, BlinkMacSystemFont, 'PingFang TC', 'Noto Sans TC', 'Helvetica Neue', Arial, sans-serif">
+  <rect width="1200" height="630" fill="#0f172a"/>
+  <rect x="0" y="0" width="1200" height="6" fill="#fb7185"/>
+
+  <!-- 編號放右上角當水印：放左邊會和上面那行標籤疊在一起 -->
+  <text x="1128" y="232" font-size="160" font-weight="800" text-anchor="end"
+        fill="#fb7185" fill-opacity="0.16">07</text>
+
+  <text x="72" y="152" font-size="26" fill="#94a3b8" letter-spacing="3">一個人的 DevSecOps</text>
+  <text x="72" y="306" font-size="76" font-weight="700" fill="#f8fafc">從事件到告警</text>
+
+  <line x1="72" y1="376" x2="1128" y2="376" stroke="#1e293b" stroke-width="2"/>
+  <text x="72" y="424" font-size="25" fill="#94a3b8">三個偵測來源　·　兩條資料路徑　·　一個出口</text>
+  <text x="1128" y="424" font-size="22" fill="#475569" text-anchor="end">github.com/neildeng/solo-devsecops</text>
+
+  <rect x="111" y="500" width="109" height="44" rx="22" fill="#1e293b" fill-opacity="1" stroke="#334155" stroke-width="1.5"/><text x="165" y="528" text-anchor="middle" font-size="22" fill="#64748b" font-weight="400">Cilium</text><rect x="233" y="500" width="96" height="44" rx="22" fill="#1e293b" fill-opacity="1" stroke="#334155" stroke-width="1.5"/><text x="281" y="528" text-anchor="middle" font-size="22" fill="#64748b" font-weight="400">Falco</text><rect x="344" y="500" width="145" height="44" rx="22" fill="#1e293b" fill-opacity="1" stroke="#334155" stroke-width="1.5"/><text x="416" y="528" text-anchor="middle" font-size="22" fill="#64748b" font-weight="400">K8s Audit</text><rect x="503" y="500" width="133" height="44" rx="22" fill="#1e293b" fill-opacity="1" stroke="#334155" stroke-width="1.5"/><text x="569" y="528" text-anchor="middle" font-size="22" fill="#64748b" font-weight="400">Suricata</text><rect x="649" y="500" width="96" height="44" rx="22" fill="#1e293b" fill-opacity="1" stroke="#334155" stroke-width="1.5"/><text x="698" y="528" text-anchor="middle" font-size="22" fill="#64748b" font-weight="400">Alloy</text><rect x="760" y="500" width="84" height="44" rx="22" fill="#1e293b" fill-opacity="1" stroke="#334155" stroke-width="1.5"/><text x="802" y="528" text-anchor="middle" font-size="22" fill="#64748b" font-weight="400">Loki</text><rect x="858" y="500" width="96" height="44" rx="22" fill="#fb7185" fill-opacity="0.18" stroke="#fb7185" stroke-width="1.5"/><text x="906" y="528" text-anchor="middle" font-size="22" fill="#fb7185" font-weight="600">Wazuh</text><rect x="969" y="500" width="121" height="44" rx="22" fill="#1e293b" fill-opacity="1" stroke="#334155" stroke-width="1.5"/><text x="1029" y="528" text-anchor="middle" font-size="22" fill="#64748b" font-weight="400">Grafana</text>
+</svg>

@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (8)：最後一哩與告警疲勞
 
+![一個人的 DevSecOps (8)：最後一哩與告警疲勞](images/covers/08-alerting-and-fatigue-cover.png)
+
 ## 背景說明
 
 偵測有了、判斷有了，剩下最後一哩：**把告警送到你會看到的地方。**

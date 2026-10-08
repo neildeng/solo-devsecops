@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (1)：先畫地圖，再動手
 
+![一個人的 DevSecOps (1)：先畫地圖，再動手](images/covers/01-overview-cover.png)
+
 ## 背景說明
 
 「DevSecOps」這個詞在招募啟事上看起來像一個職位，在實作上卻是一整排工具。

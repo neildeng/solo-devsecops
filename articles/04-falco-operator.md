@@ -1,5 +1,7 @@
 # 一個人的 DevSecOps (4)：主機層偵測
 
+![一個人的 DevSecOps (4)：主機層偵測](images/covers/04-falco-operator-cover.png)
+
 ## 背景說明
 
 Falco 看的是**主機上發生了什麼**：哪個行程被執行、哪個檔案被讀、哪個容器裡
